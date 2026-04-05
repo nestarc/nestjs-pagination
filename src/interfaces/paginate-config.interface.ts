@@ -16,6 +16,16 @@ export interface PaginateConfig<T = any> {
   select?: (keyof T & string)[];
 
   paginationType?: 'offset' | 'cursor';
+  /**
+   * Column used as cursor for cursor-based pagination. Defaults to 'id'.
+   *
+   * Requirements:
+   * - Must be included in `sortableColumns`
+   * - Should have unique, sequential values (e.g., auto-increment ID, UUID v7, timestamp)
+   * - Non-unique cursor columns may produce inconsistent results across pages
+   *
+   * @see https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination
+   */
   cursorColumn?: keyof T & string;
   defaultLimit?: number;
   maxLimit?: number;
