@@ -17,6 +17,7 @@ const config: Config = {
     '!**/testing/**',
   ],
   coverageDirectory: '../coverage',
+  coverageReporters: ['text', 'lcov', 'json-summary'],
   testEnvironment: 'node',
 };
 

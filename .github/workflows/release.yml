@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test -- --runInBand
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = await import('fs');
+            let body = `Published to npm: [@nestarc/pagination@${process.env.VERSION}](https://www.npmjs.com/package/@nestarc/pagination/v/${process.env.VERSION})`;
+
+            // Extract version section from CHANGELOG if available
+            if (fs.existsSync('CHANGELOG.md')) {
+              const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
+              const versionHeader = `## [${process.env.VERSION}]`;
+              const start = changelog.indexOf(versionHeader);
+              if (start !== -1) {
+                const nextHeader = changelog.indexOf('\n## [', start + 1);
+                const section = nextHeader !== -1
+                  ? changelog.substring(start, nextHeader).trim()
+                  : changelog.substring(start).trim();
+                body = section;
+              }
+            }
+
+            await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: context.ref.replace('refs/tags/', ''),
+              name: `v${process.env.VERSION}`,
+              body,
+              draft: false,
+              prerelease: process.env.VERSION.includes('-'),
+            });
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
