@@ -150,6 +150,67 @@ describe('paginate — offset mode', () => {
     expect(result.links.last).toContain('page=5');
   });
 
+  it('should compose config.where and filter with AND when they share a key', async () => {
+    const delegate = createMockDelegate([], 0);
+    const query: PaginateQuery = {
+      filter: { role: '$eq:user' },
+      path: '/users',
+    };
+    const config: PaginateConfig<User> = {
+      ...baseConfig,
+      where: { role: 'admin' },
+      filterableColumns: { role: ['$eq'] },
+    };
+    await paginate(query, delegate, config);
+    const calledWhere = delegate.findMany.mock.calls[0][0].where;
+    expect(calledWhere.AND).toBeDefined();
+    expect(calledWhere.AND).toHaveLength(2);
+    expect(calledWhere.AND[0]).toEqual({ role: 'admin' });
+    expect(calledWhere.AND[1]).toEqual({ role: { equals: 'user' } });
+  });
+
+  it('should return single condition directly without AND wrapper', async () => {
+    const delegate = createMockDelegate([], 0);
+    const query: PaginateQuery = { path: '/users' };
+    const config: PaginateConfig<User> = {
+      ...baseConfig,
+      where: { isActive: true },
+    };
+    await paginate(query, delegate, config);
+    const calledWhere = delegate.findMany.mock.calls[0][0].where;
+    expect(calledWhere).toEqual({ isActive: true });
+    expect(calledWhere.AND).toBeUndefined();
+  });
+
+  it('should merge relations into select when both are configured', async () => {
+    const delegate = createMockDelegate([], 0);
+    const query: PaginateQuery = { path: '/users' };
+    const config: PaginateConfig<User> = {
+      ...baseConfig,
+      select: ['id', 'name'],
+      relations: { profile: true },
+    };
+    await paginate(query, delegate, config);
+    const args = delegate.findMany.mock.calls[0][0];
+    expect(args.select).toEqual({ id: true, name: true, profile: true });
+    expect(args.include).toBeUndefined();
+  });
+
+  it('should never set both include and select', async () => {
+    const delegate = createMockDelegate([], 0);
+    const query: PaginateQuery = { path: '/users' };
+    const config: PaginateConfig<User> = {
+      ...baseConfig,
+      select: ['id'],
+      relations: { posts: { select: { id: true, title: true } } },
+    };
+    await paginate(query, delegate, config);
+    const args = delegate.findMany.mock.calls[0][0];
+    expect(args.select).toBeDefined();
+    expect(args.include).toBeUndefined();
+    expect(args.select.posts).toEqual({ select: { id: true, title: true } });
+  });
+
   it('should run findMany and count in parallel', async () => {
     let findManyStarted = false;
     let countStartedWhileFindManyPending = false;

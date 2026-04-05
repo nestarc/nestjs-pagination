@@ -48,15 +48,7 @@ async function paginateOffset<T>(
     take: limit,
   };
 
-  if (config.relations) {
-    findManyArgs.include = config.relations;
-  }
-
-  if (config.select) {
-    findManyArgs.select = Object.fromEntries(
-      config.select.map((col) => [col, true]),
-    );
-  }
+  applySelectAndRelations(findManyArgs, config);
 
   const [data, totalItems] = await Promise.all([
     delegate.findMany(findManyArgs),
@@ -113,15 +105,7 @@ async function paginateCursor<T>(
     findManyArgs.take = -(limit + 1);
   }
 
-  if (config.relations) {
-    findManyArgs.include = config.relations;
-  }
-
-  if (config.select) {
-    findManyArgs.select = Object.fromEntries(
-      config.select.map((col) => [col, true]),
-    );
-  }
+  applySelectAndRelations(findManyArgs, config);
 
   let data = await delegate.findMany(findManyArgs);
 
@@ -180,19 +164,50 @@ function buildWhere<T>(
   query: PaginateQuery,
   config: PaginateConfig<T>,
 ): Record<string, any> {
-  const where: Record<string, any> = { ...((config.where as any) ?? {}) };
+  const conditions: Record<string, any>[] = [];
+
+  if (config.where && Object.keys(config.where).length > 0) {
+    conditions.push(config.where as Record<string, any>);
+  }
 
   if (query.filter && config.filterableColumns) {
     const filterWhere = parseFilters(query.filter, config.filterableColumns as Record<string, any>);
-    Object.assign(where, filterWhere);
+    if (Object.keys(filterWhere).length > 0) {
+      conditions.push(filterWhere);
+    }
   }
 
   if (query.search && config.searchableColumns) {
     const searchWhere = buildSearchCondition(query.search, config.searchableColumns);
-    Object.assign(where, searchWhere);
+    if (Object.keys(searchWhere).length > 0) {
+      conditions.push(searchWhere);
+    }
   }
 
-  return where;
+  if (conditions.length === 0) return {};
+  if (conditions.length === 1) return conditions[0];
+  return { AND: conditions };
+}
+
+function applySelectAndRelations<T>(
+  findManyArgs: any,
+  config: PaginateConfig<T>,
+): void {
+  if (config.select) {
+    // Build select object from column list
+    const selectObj: Record<string, any> = Object.fromEntries(
+      config.select.map((col) => [col, true]),
+    );
+    // Merge relations into select if both are present
+    if (config.relations) {
+      for (const [key, value] of Object.entries(config.relations)) {
+        selectObj[key] = value;
+      }
+    }
+    findManyArgs.select = selectObj;
+  } else if (config.relations) {
+    findManyArgs.include = config.relations;
+  }
 }
 
 function resolveLimit<T>(
