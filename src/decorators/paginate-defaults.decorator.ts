@@ -1,8 +1,14 @@
 import { SetMetadata } from '@nestjs/common';
-import { PaginateConfig } from '../interfaces/paginate-config.interface';
+import { SortOrder } from '../interfaces/filter-operator.type';
 
 export const PAGINATE_DEFAULTS_KEY = 'PAGINATE_DEFAULTS';
 
-export const PaginateDefaults = (
-  defaults: Partial<Pick<PaginateConfig, 'defaultLimit' | 'maxLimit'>>,
-) => SetMetadata(PAGINATE_DEFAULTS_KEY, defaults);
+export interface PaginateDefaultsOptions {
+  defaultLimit?: number;
+  maxLimit?: number;
+  defaultSortBy?: [string, SortOrder][];
+  paginationType?: 'offset' | 'cursor';
+}
+
+export const PaginateDefaults = (defaults: PaginateDefaultsOptions) =>
+  SetMetadata(PAGINATE_DEFAULTS_KEY, defaults);

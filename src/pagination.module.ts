@@ -1,9 +1,11 @@
 import { DynamicModule, Module } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { PAGINATION_MODULE_OPTIONS } from './pagination.constants';
 import {
   PaginationModuleOptions,
   PaginationModuleAsyncOptions,
 } from './interfaces/pagination-options.interface';
+import { PaginateService } from './paginate.service';
 
 @Module({})
 export class PaginationModule {
@@ -16,8 +18,10 @@ export class PaginationModule {
           provide: PAGINATION_MODULE_OPTIONS,
           useValue: options ?? {},
         },
+        PaginateService,
+        Reflector,
       ],
-      exports: [PAGINATION_MODULE_OPTIONS],
+      exports: [PAGINATION_MODULE_OPTIONS, PaginateService],
     };
   }
 
@@ -32,8 +36,10 @@ export class PaginationModule {
           useFactory: options.useFactory,
           inject: options.inject ?? [],
         },
+        PaginateService,
+        Reflector,
       ],
-      exports: [PAGINATION_MODULE_OPTIONS],
+      exports: [PAGINATION_MODULE_OPTIONS, PaginateService],
     };
   }
 }

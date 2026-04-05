@@ -8,6 +8,9 @@ export {
 // Core Function
 export { paginate } from './paginate';
 
+// Service
+export { PaginateService } from './paginate.service';
+
 // Interfaces
 export { PaginateQuery } from './interfaces/paginate-query.interface';
 export { PaginateConfig } from './interfaces/paginate-config.interface';
@@ -16,7 +19,7 @@ export { FilterOperator, SortOrder } from './interfaces/filter-operator.type';
 
 // Decorators
 export { Paginate } from './decorators/paginate.decorator';
-export { PaginateDefaults, PAGINATE_DEFAULTS_KEY } from './decorators/paginate-defaults.decorator';
+export { PaginateDefaults, PAGINATE_DEFAULTS_KEY, PaginateDefaultsOptions } from './decorators/paginate-defaults.decorator';
 export {
   ApiPaginatedResponse,
   ApiCursorPaginatedResponse,
