@@ -40,13 +40,6 @@ export function parsePaginateQuery(request: any): PaginateQuery {
     result.filter = Object.fromEntries(filterEntries);
   }
 
-  if (query.select !== undefined) {
-    result.select =
-      typeof query.select === 'string'
-        ? query.select.split(',').map((s: string) => s.trim())
-        : query.select;
-  }
-
   if (query.after !== undefined) {
     result.after = query.after;
   }

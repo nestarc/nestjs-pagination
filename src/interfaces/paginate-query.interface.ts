@@ -5,7 +5,6 @@ export interface PaginateQuery {
   sortBy?: [string, SortOrder][];
   search?: string;
   filter?: Record<string, string | string[]>;
-  select?: string[];
   path: string;
 
   // Offset-based

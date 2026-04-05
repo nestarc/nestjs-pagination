@@ -50,12 +50,6 @@ describe('parsePaginateQuery', () => {
     expect(result.before).toBe('xyz789');
   });
 
-  it('should parse select as comma-separated string', () => {
-    const req = mockRequest({ select: 'id,name,email' });
-    const result = parsePaginateQuery(req);
-    expect(result.select).toEqual(['id', 'name', 'email']);
-  });
-
   it('should clamp page to minimum 1', () => {
     const req = mockRequest({ page: '0' });
     const result = parsePaginateQuery(req);
