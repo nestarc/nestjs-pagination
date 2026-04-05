@@ -30,4 +30,17 @@ describe('coerceFilterValue', () => {
   it('should handle ISO date strings as strings (no auto-conversion)', () => {
     expect(coerceFilterValue('2024-01-01')).toBe('2024-01-01');
   });
+
+  it('should preserve leading-zero strings', () => {
+    expect(coerceFilterValue('00123')).toBe('00123');
+    expect(coerceFilterValue('007')).toBe('007');
+  });
+
+  it('should still convert plain zero to number', () => {
+    expect(coerceFilterValue('0')).toBe(0);
+  });
+
+  it('should preserve trailing decimal zero strings', () => {
+    expect(coerceFilterValue('1.0')).toBe('1.0');
+  });
 });

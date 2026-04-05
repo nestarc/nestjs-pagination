@@ -5,7 +5,7 @@ export function coerceFilterValue(
   if (value === 'false') return false;
   if (value === 'null') return null;
 
-  if (value !== '' && !isNaN(Number(value)) && value.trim() === value) {
+  if (value !== '' && !isNaN(Number(value)) && value.trim() === value && String(Number(value)) === value) {
     return Number(value);
   }
 
