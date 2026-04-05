@@ -76,7 +76,7 @@ async function paginateOffset<T>(
       ...(query.search && { search: query.search }),
       ...(query.filter && { filter: flattenFilter(query.filter) }),
     },
-    links: buildOffsetLinks(query.path, page, limit, totalPages),
+    links: buildOffsetLinks(query, page, limit, totalPages),
   };
 }
 
@@ -172,7 +172,7 @@ async function paginateCursor<T>(
   return {
     data,
     meta,
-    links: buildCursorLinks(query.path, limit, endCursor, startCursor, hasNextPage, hasPreviousPage, query.after ?? query.before ?? null),
+    links: buildCursorLinks(query, limit, endCursor, startCursor, hasNextPage, hasPreviousPage),
   };
 }
 
