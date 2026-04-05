@@ -26,6 +26,7 @@ export function buildCursorLinks(
   startCursor: string | null,
   hasNextPage: boolean,
   hasPreviousPage: boolean,
+  requestCursor?: string | null,
 ): {
   current: string;
   next: string | null;
@@ -34,7 +35,7 @@ export function buildCursorLinks(
   const base = `${path}?limit=${limit}`;
 
   return {
-    current: endCursor ? `${base}&after=${endCursor}` : base,
+    current: requestCursor ? `${base}&after=${requestCursor}` : base,
     next: hasNextPage && endCursor ? `${base}&after=${endCursor}` : null,
     previous: hasPreviousPage && startCursor ? `${base}&before=${startCursor}` : null,
   };

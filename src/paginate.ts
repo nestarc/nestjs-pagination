@@ -117,17 +117,34 @@ async function paginateCursor<T>(
     findManyArgs.include = config.relations;
   }
 
+  if (config.select) {
+    findManyArgs.select = Object.fromEntries(
+      config.select.map((col) => [col, true]),
+    );
+  }
+
   let data = await delegate.findMany(findManyArgs);
 
-  const hasPreviousPage = !!query.after;
+  let hasPreviousPage: boolean;
   let hasNextPage: boolean;
 
   if (query.before) {
-    hasNextPage = true;
-    if (data.length > limit) {
+    // Navigating backward — we fetched limit+1 items backward
+    hasNextPage = true; // We came from a forward page, so there's always a next
+    hasPreviousPage = data.length > limit;
+    if (hasPreviousPage) {
       data = data.slice(data.length - limit);
     }
+  } else if (query.after) {
+    // Navigating forward from a cursor — there's always a previous
+    hasPreviousPage = true;
+    hasNextPage = data.length > limit;
+    if (hasNextPage) {
+      data.pop();
+    }
   } else {
+    // First page (no cursor) — no previous
+    hasPreviousPage = false;
     hasNextPage = data.length > limit;
     if (hasNextPage) {
       data.pop();
@@ -155,7 +172,7 @@ async function paginateCursor<T>(
   return {
     data,
     meta,
-    links: buildCursorLinks(query.path, limit, endCursor, startCursor, hasNextPage, hasPreviousPage),
+    links: buildCursorLinks(query.path, limit, endCursor, startCursor, hasNextPage, hasPreviousPage, query.after ?? query.before ?? null),
   };
 }
 

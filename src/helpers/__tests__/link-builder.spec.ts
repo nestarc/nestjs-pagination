@@ -45,7 +45,7 @@ describe('buildCursorLinks', () => {
   it('should build links with next cursor', () => {
     const links = buildCursorLinks('/users', 20, 'abc', null, true, false);
     expect(links).toEqual({
-      current: '/users?limit=20&after=abc',
+      current: '/users?limit=20',
       next: '/users?limit=20&after=abc',
       previous: null,
     });
@@ -64,6 +64,12 @@ describe('buildCursorLinks', () => {
 
   it('should build current link without cursor on first page', () => {
     const links = buildCursorLinks('/users', 20, 'abc', null, true, false);
-    expect(links.current).toContain('/users');
+    expect(links.current).toBe('/users?limit=20');
+  });
+
+  it('should build current link with requestCursor when provided', () => {
+    const links = buildCursorLinks('/users', 20, 'newEnd', null, true, false, 'reqCursor');
+    expect(links.current).toBe('/users?limit=20&after=reqCursor');
+    expect(links.next).toBe('/users?limit=20&after=newEnd');
   });
 });

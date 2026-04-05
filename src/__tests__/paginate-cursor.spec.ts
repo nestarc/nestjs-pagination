@@ -106,6 +106,34 @@ describe('paginate — cursor mode', () => {
     expect('hasNextPage' in result.meta).toBe(true);
   });
 
+  it('hasPreviousPage should be false on first page (no cursor)', async () => {
+    const mockData = Array.from({ length: 5 }, (_, i) => ({ id: String(i + 1), name: `User ${i + 1}` }));
+    const delegate = createMockDelegate(mockData, 5);
+    const query: PaginateQuery = { limit: 20, path: '/users' };
+    const result = (await paginate(query, delegate, baseConfig)) as any;
+    expect(result.meta.hasPreviousPage).toBe(false);
+  });
+
+  it('hasPreviousPage should be true when navigating forward with after cursor', async () => {
+    const mockData = [{ id: '11', name: 'User 11' }];
+    const delegate = createMockDelegate(mockData, 50);
+    const afterCursor = encodeCursorValue({ id: '10' });
+    const query: PaginateQuery = { limit: 20, after: afterCursor, path: '/users' };
+    const result = (await paginate(query, delegate, baseConfig)) as any;
+    expect(result.meta.hasPreviousPage).toBe(true);
+  });
+
+  it('hasPreviousPage should be true for before cursor when more items exist', async () => {
+    // Fetch limit+1 items backward to indicate there's a previous page
+    const mockData = Array.from({ length: 22 }, (_, i) => ({ id: String(i + 1), name: `User ${i + 1}` }));
+    const delegate = createMockDelegate(mockData, 50);
+    const beforeCursor = encodeCursorValue({ id: '23' });
+    const query: PaginateQuery = { limit: 21, before: beforeCursor, path: '/users' };
+    const result = (await paginate(query, delegate, baseConfig)) as any;
+    expect(result.meta.hasPreviousPage).toBe(true);
+    expect(result.meta.hasNextPage).toBe(true);
+  });
+
   it('should use custom cursorColumn', async () => {
     const mockData = [{ id: '1', createdAt: new Date('2024-01-01') }];
     const delegate = createMockDelegate(mockData, 1);
