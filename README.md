@@ -1,5 +1,11 @@
 # @nestarc/pagination
 
+[![npm version](https://img.shields.io/npm/v/@nestarc/pagination.svg)](https://www.npmjs.com/package/@nestarc/pagination)
+[![npm downloads](https://img.shields.io/npm/dm/@nestarc/pagination.svg)](https://www.npmjs.com/package/@nestarc/pagination)
+[![CI](https://github.com/nestarc/nestjs-pagination/actions/workflows/ci.yml/badge.svg)](https://github.com/nestarc/nestjs-pagination/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docs](https://img.shields.io/badge/docs-nestarc.dev-blue.svg)](https://nestarc.dev/packages/pagination/)
+
 Prisma cursor & offset pagination for NestJS with filtering, sorting, search, and Swagger auto-documentation.
 
 ## Features
