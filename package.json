@@ -51,5 +51,18 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.7.0"
   },
+  "keywords": [
+    "nestjs",
+    "pagination",
+    "cursor-pagination",
+    "offset-pagination",
+    "prisma",
+    "filter",
+    "sorting",
+    "search",
+    "swagger",
+    "nestjs-module",
+    "saas"
+  ],
   "license": "MIT"
 }
