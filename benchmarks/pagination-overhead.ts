@@ -134,7 +134,7 @@ async function main() {
 
   const delegate = prisma.product;
   const baseConfig: any = {
-    sortableColumns: ['createdAt', 'price', 'name'],
+    sortableColumns: ['id', 'createdAt', 'price', 'name'],
     defaultSortBy: [['createdAt', 'DESC']],
     defaultLimit: 10,
     maxLimit: 100,
@@ -178,52 +178,95 @@ async function main() {
   }
 
   // ===================================================================
-  // C: Cursor — first page
+  // C: Cursor — first page (sort by id)
   // ===================================================================
-  const cursorConfig: any = { ...baseConfig, paginationType: 'cursor' as const, cursorColumn: 'id' };
+  const cursorConfigById: any = {
+    ...baseConfig,
+    paginationType: 'cursor' as const,
+    cursorColumn: 'id',
+    defaultSortBy: [['id', 'ASC']],
+  };
   const queryC: PaginateQuery = { path: '/products', limit: 10 };
 
-  for (let i = 0; i < WARMUP; i++) await paginate(queryC, delegate, cursorConfig);
+  for (let i = 0; i < WARMUP; i++) await paginate(queryC, delegate, cursorConfigById);
 
-  console.log(`Running C: cursor first page (${ITERATIONS} iterations)...`);
+  console.log(`Running C: cursor first page, sort by id (${ITERATIONS} iterations)...`);
   const timingsC: number[] = [];
   for (let i = 0; i < ITERATIONS; i++) {
     const start = performance.now();
-    await paginate(queryC, delegate, cursorConfig);
+    await paginate(queryC, delegate, cursorConfigById);
     timingsC.push(performance.now() - start);
   }
 
   // ===================================================================
-  // D: Cursor — deep page (navigate to page ~100 by chaining cursors)
+  // D1: Cursor — deep page, sort by id (efficient: WHERE id > ?)
   // ===================================================================
-  // First, get a cursor deep into the dataset
-  let deepCursor: string | null = null;
-  let currentResult = await paginate({ path: '/products', limit: 10 }, delegate, cursorConfig);
+  let deepCursorById: string | null = null;
+  let currentResult = await paginate({ path: '/products', limit: 10 }, delegate, cursorConfigById);
   for (let i = 0; i < 99; i++) {
     const meta = (currentResult as any).meta;
     if (!meta.hasNextPage) break;
-    deepCursor = meta.endCursor;
+    deepCursorById = meta.endCursor;
     currentResult = await paginate(
-      { path: '/products', limit: 10, after: deepCursor! },
+      { path: '/products', limit: 10, after: deepCursorById! },
       delegate,
-      cursorConfig,
+      cursorConfigById,
     );
   }
 
-  let resultD: BenchResult | null = null;
-  if (deepCursor) {
-    const queryD: PaginateQuery = { path: '/products', limit: 10, after: deepCursor };
+  let resultD1: BenchResult | null = null;
+  if (deepCursorById) {
+    const queryD1: PaginateQuery = { path: '/products', limit: 10, after: deepCursorById };
 
-    for (let i = 0; i < WARMUP; i++) await paginate(queryD, delegate, cursorConfig);
+    for (let i = 0; i < WARMUP; i++) await paginate(queryD1, delegate, cursorConfigById);
 
-    console.log(`Running D: cursor deep page (${ITERATIONS} iterations)...`);
-    const timingsD: number[] = [];
+    console.log(`Running D1: cursor deep page, sort by id (${ITERATIONS} iterations)...`);
+    const timingsD1: number[] = [];
     for (let i = 0; i < ITERATIONS; i++) {
       const start = performance.now();
-      await paginate(queryD, delegate, cursorConfig);
-      timingsD.push(performance.now() - start);
+      await paginate(queryD1, delegate, cursorConfigById);
+      timingsD1.push(performance.now() - start);
     }
-    resultD = analyze('D) cursor — deep page (~page 100)', timingsD);
+    resultD1 = analyze('D1) cursor deep — sort by id (WHERE id > ?)', timingsD1);
+  }
+
+  // ===================================================================
+  // D2: Cursor — deep page, sort by createdAt (subquery: WHERE created_at <= ...)
+  // ===================================================================
+  const cursorConfigByDate: any = {
+    ...baseConfig,
+    paginationType: 'cursor' as const,
+    cursorColumn: 'id',
+    defaultSortBy: [['createdAt', 'DESC']],
+  };
+
+  let deepCursorByDate: string | null = null;
+  currentResult = await paginate({ path: '/products', limit: 10 }, delegate, cursorConfigByDate);
+  for (let i = 0; i < 99; i++) {
+    const meta = (currentResult as any).meta;
+    if (!meta.hasNextPage) break;
+    deepCursorByDate = meta.endCursor;
+    currentResult = await paginate(
+      { path: '/products', limit: 10, after: deepCursorByDate! },
+      delegate,
+      cursorConfigByDate,
+    );
+  }
+
+  let resultD2: BenchResult | null = null;
+  if (deepCursorByDate) {
+    const queryD2: PaginateQuery = { path: '/products', limit: 10, after: deepCursorByDate };
+
+    for (let i = 0; i < WARMUP; i++) await paginate(queryD2, delegate, cursorConfigByDate);
+
+    console.log(`Running D2: cursor deep page, sort by createdAt (${ITERATIONS} iterations)...`);
+    const timingsD2: number[] = [];
+    for (let i = 0; i < ITERATIONS; i++) {
+      const start = performance.now();
+      await paginate(queryD2, delegate, cursorConfigByDate);
+      timingsD2.push(performance.now() - start);
+    }
+    resultD2 = analyze('D2) cursor deep — sort by createdAt (subquery)', timingsD2);
   }
 
   // ===================================================================
@@ -267,7 +310,7 @@ async function main() {
   // ===================================================================
   const resultA = analyze('A) offset — page 1 (shallow)', timingsA);
   const resultB = analyze('B) offset — page 100 (deep, SKIP 990)', timingsB);
-  const resultC = analyze('C) cursor — first page', timingsC);
+  const resultC = analyze('C) cursor — first page (sort by id)', timingsC);
   const resultE = analyze('E) filtered + sorted (category + price)', timingsE);
   const resultF = analyze('F) full-text search', timingsF);
 
@@ -279,7 +322,8 @@ async function main() {
   console.log('='.repeat(70));
 
   const results = [resultA, resultB, resultC];
-  if (resultD) results.push(resultD);
+  if (resultD1) results.push(resultD1);
+  if (resultD2) results.push(resultD2);
   results.push(resultE, resultF);
 
   for (const r of results) {
@@ -290,9 +334,14 @@ async function main() {
   console.log(
     `Deep offset penalty (page 100 vs page 1): +${deepPenalty.toFixed(2)}ms (+${deepPct}%)`,
   );
-  if (resultD) {
+  if (resultD1) {
     console.log(
-      `Cursor deep page: ${resultD.avgMs}ms vs offset deep page: ${resultB.avgMs}ms`,
+      `Cursor deep (sort by id): ${resultD1.avgMs}ms vs offset deep: ${resultB.avgMs}ms`,
+    );
+  }
+  if (resultD2) {
+    console.log(
+      `Cursor deep (sort by createdAt): ${resultD2.avgMs}ms — Prisma generates subquery`,
     );
   }
   console.log('-'.repeat(70));
