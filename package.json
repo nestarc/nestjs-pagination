@@ -19,6 +19,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "bench": "npx prisma generate --schema=benchmarks/prisma/schema.prisma && npx ts-node benchmarks/pagination-overhead.ts",
     "test": "jest",
     "test:cov": "jest --coverage"
   },
@@ -43,6 +44,7 @@
     "@types/jest": "^29.5.0",
     "@types/node": "^22.0.0",
     "jest": "^29.7.0",
+    "prisma": "^6.19.3",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.0",
     "ts-jest": "^29.2.0",
