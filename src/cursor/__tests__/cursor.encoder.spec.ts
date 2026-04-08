@@ -43,6 +43,16 @@ describe('decodeCursor', () => {
     expect(() => decodeCursor('')).toThrow(InvalidCursorError);
   });
 
+  it('should throw InvalidCursorError for non-object JSON (e.g. string)', () => {
+    const encoded = Buffer.from(JSON.stringify('just a string')).toString('base64url');
+    expect(() => decodeCursor(encoded)).toThrow(InvalidCursorError);
+  });
+
+  it('should throw InvalidCursorError for null JSON', () => {
+    const encoded = Buffer.from('null').toString('base64url');
+    expect(() => decodeCursor(encoded)).toThrow(InvalidCursorError);
+  });
+
   it('should roundtrip encode/decode', () => {
     const original = { id: '10', name: 'Alice' };
     const cursor = encodeCursor(original, 'id');

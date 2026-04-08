@@ -13,6 +13,7 @@ const config: Config = {
     '!**/*.interface.ts',
     '!**/*.type.ts',
     '!**/index.ts',
+    '!**/decorators/paginate.decorator.ts',
     '!**/__tests__/**',
     '!**/testing/**',
   ],

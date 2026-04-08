@@ -112,3 +112,15 @@ describe('buildCursorLinks', () => {
     expect(links.current).toContain('sortBy=');
   });
 });
+
+describe('buildOffsetLinks — array filter values', () => {
+  it('should serialize array filter values as multiple params', () => {
+    const query: PaginateQuery = {
+      path: '/users',
+      filter: { age: ['$gte:18', '$lte:65'] },
+    };
+    const links = buildOffsetLinks(query, 1, 20, 5);
+    expect(links.first).toContain('filter.age=%24gte%3A18');
+    expect(links.first).toContain('filter.age=%24lte%3A65');
+  });
+});

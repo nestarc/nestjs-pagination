@@ -134,6 +134,32 @@ describe('paginate — cursor mode', () => {
     expect(result.meta.hasNextPage).toBe(true);
   });
 
+  it('should validate sortBy columns in cursor mode', async () => {
+    const mockData = [{ id: '1', name: 'User 1' }];
+    const delegate = createMockDelegate(mockData, 1);
+    const query: PaginateQuery = {
+      limit: 20,
+      path: '/users',
+      sortBy: [['name', 'ASC']],
+    };
+    const result = (await paginate(query, delegate, baseConfig)) as any;
+    expect(result.data).toEqual(mockData);
+  });
+
+  it('should handle before cursor when data does not exceed limit', async () => {
+    // Return exactly limit items (no extra) → hasPreviousPage = false
+    const mockData = Array.from({ length: 5 }, (_, i) => ({
+      id: String(i + 1),
+      name: `User ${i + 1}`,
+    }));
+    const delegate = createMockDelegate(mockData, 50);
+    const beforeCursor = encodeCursorValue({ id: '10' });
+    const query: PaginateQuery = { limit: 20, before: beforeCursor, path: '/users' };
+    const result = (await paginate(query, delegate, baseConfig)) as any;
+    expect(result.meta.hasNextPage).toBe(true);
+    expect(result.meta.hasPreviousPage).toBe(false);
+  });
+
   it('should use custom cursorColumn', async () => {
     const mockData = [{ id: '1', createdAt: new Date('2024-01-01') }];
     const delegate = createMockDelegate(mockData, 1);

@@ -95,4 +95,22 @@ describe('parseFilters', () => {
     const result = parseFilters({ age: ['$gte:18', '$lte:65'] }, filterableColumns);
     expect(result).toEqual({ age: { gte: 18, lte: 65 } });
   });
+
+  it('should throw for filter value without colon separator', () => {
+    expect(() => parseFilters({ role: 'admin' }, filterableColumns)).toThrow(
+      InvalidFilterColumnError,
+    );
+  });
+
+  it('should handle $not:null operator', () => {
+    const cols: Record<string, FilterOperator[]> = { role: ['$not:null'] };
+    const result = parseFilters({ role: '$not:null' }, cols);
+    expect(result).toEqual({ role: { not: null } });
+  });
+
+  it('should throw for unknown operator', () => {
+    expect(() =>
+      parseFilters({ role: '$unknown:value' }, filterableColumns),
+    ).toThrow(InvalidFilterColumnError);
+  });
 });
