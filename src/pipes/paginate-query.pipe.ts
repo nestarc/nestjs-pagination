@@ -29,6 +29,11 @@ export function parsePaginateQuery(request: any): PaginateQuery {
     result.search = query.search;
   }
 
+  if (query.withDeleted !== undefined) {
+    const value = String(query.withDeleted).toLowerCase();
+    result.withDeleted = value === 'true' || value === '1' || value === 'yes';
+  }
+
   const filterEntries: [string, string | string[]][] = [];
   for (const key of Object.keys(query)) {
     if (key.startsWith('filter.')) {

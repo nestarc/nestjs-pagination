@@ -1,6 +1,7 @@
 import { paginate } from '../paginate';
 import { PaginateQuery } from '../interfaces/paginate-query.interface';
 import { PaginateConfig } from '../interfaces/paginate-config.interface';
+import { decodeKeysetCursor, encodeKeysetCursor } from '../cursor/cursor.encoder';
 
 interface User {
   id: string;
@@ -97,6 +98,14 @@ describe('paginate — cursor mode', () => {
     expect(delegate.count).toHaveBeenCalled();
   });
 
+  it('should include totalItems when countStrategy is exact in cursor mode', async () => {
+    const delegate = createMockDelegate([], 12);
+    const query: PaginateQuery = { limit: 20, path: '/users' };
+    const result = (await paginate(query, delegate, { ...baseConfig, countStrategy: 'exact' })) as any;
+    expect(result.meta.totalItems).toBe(12);
+    expect(delegate.count).toHaveBeenCalled();
+  });
+
   it('should auto-detect cursor mode from after param', async () => {
     const delegate = createMockDelegate([{ id: '1' }], 1);
     const afterCursor = encodeCursorValue({ id: '0' });
@@ -168,5 +177,97 @@ describe('paginate — cursor mode', () => {
     const result = (await paginate(query, delegate, config)) as any;
     const decoded = JSON.parse(Buffer.from(result.meta.startCursor, 'base64url').toString());
     expect(decoded).toHaveProperty('createdAt');
+  });
+
+  it('should build keyset where for after cursor with duplicate sort values', async () => {
+    const data = [
+      { id: '9', createdAt: '2024-01-01T00:00:00.000Z' },
+      { id: '8', createdAt: '2024-01-01T00:00:00.000Z' },
+    ];
+    const delegate = createMockDelegate(data, 2);
+    const sortBy: [string, 'DESC'][] = [['createdAt', 'DESC'], ['id', 'DESC']];
+    const after = encodeKeysetCursor({
+      v: 2,
+      values: { createdAt: '2024-01-01T00:00:00.000Z', id: '10' },
+      sortBy,
+    });
+    await paginate(
+      { limit: 20, after, path: '/users', sortBy },
+      delegate,
+      { ...baseConfig, cursorStrategy: 'keyset', cursorColumns: ['createdAt', 'id'] },
+    );
+    expect(delegate.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        OR: [
+          { createdAt: { lt: '2024-01-01T00:00:00.000Z' } },
+          { AND: [{ createdAt: { equals: '2024-01-01T00:00:00.000Z' } }, { id: { lt: '10' } }] },
+        ],
+      },
+    }));
+  });
+
+  it('should generate keyset cursors from configured cursor columns', async () => {
+    const delegate = createMockDelegate([
+      { id: '10', createdAt: '2024-01-01T00:00:00.000Z' },
+      { id: '9', createdAt: '2024-01-01T00:00:00.000Z' },
+    ], 2);
+    const sortBy: [string, 'DESC'][] = [['createdAt', 'DESC'], ['id', 'DESC']];
+    const result = (await paginate(
+      { limit: 20, path: '/users', sortBy },
+      delegate,
+      { ...baseConfig, cursorStrategy: 'keyset', cursorColumns: ['createdAt', 'id'] },
+    )) as any;
+    expect(decodeKeysetCursor(result.meta.startCursor)).toEqual({
+      v: 2,
+      values: { createdAt: '2024-01-01T00:00:00.000Z', id: '10' },
+      sortBy,
+    });
+    expect(decodeKeysetCursor(result.meta.endCursor)).toEqual({
+      v: 2,
+      values: { createdAt: '2024-01-01T00:00:00.000Z', id: '9' },
+      sortBy,
+    });
+  });
+
+  it('should append missing keyset tie-breaker columns to orderBy', async () => {
+    const delegate = createMockDelegate([
+      { id: '10', createdAt: '2024-01-01T00:00:00.000Z' },
+    ], 1);
+    await paginate(
+      { limit: 20, path: '/users' },
+      delegate,
+      {
+        ...baseConfig,
+        cursorStrategy: 'keyset',
+        cursorColumns: ['createdAt', 'id'],
+        defaultSortBy: [['createdAt', 'DESC']],
+      },
+    );
+    expect(delegate.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    }));
+  });
+
+  it('should preserve requested order when keyset before cursor has an extra row', async () => {
+    const data = [
+      { id: '12', createdAt: '2024-01-01T00:00:00.000Z' },
+      { id: '11', createdAt: '2024-01-01T00:00:00.000Z' },
+      { id: '10', createdAt: '2024-01-01T00:00:00.000Z' },
+    ];
+    const delegate = createMockDelegate(data, 3);
+    const sortBy: [string, 'DESC'][] = [['createdAt', 'DESC'], ['id', 'DESC']];
+    const before = encodeKeysetCursor({
+      v: 2,
+      values: { createdAt: '2024-01-01T00:00:00.000Z', id: '9' },
+      sortBy,
+    });
+    const result = (await paginate(
+      { limit: 2, before, path: '/users', sortBy },
+      delegate,
+      { ...baseConfig, cursorStrategy: 'keyset', cursorColumns: ['createdAt', 'id'] },
+    )) as any;
+    expect(result.data).toEqual(data.slice(0, 2));
+    expect(result.meta.hasPreviousPage).toBe(true);
+    expect(result.meta.hasNextPage).toBe(true);
   });
 });

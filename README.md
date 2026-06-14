@@ -13,7 +13,7 @@ Prisma cursor & offset pagination for NestJS with filtering, sorting, search, an
 - **Offset + cursor** pagination in a single API
 - **12 filter operators**: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$ilike`, `$btw`, `$null`, `$not:null`
 - **Multi-column sorting** with null positioning
-- **Full-text search** across multiple columns
+- **Case-insensitive contains search** across multiple columns
 - **Column/operator whitelisting** for security
 - **Swagger** auto-documentation (optional)
 - **Standalone** `paginate()` function — works without NestJS
@@ -98,7 +98,7 @@ GET /users?page=2&limit=20&sortBy=createdAt:DESC&search=john&filter.role=$eq:adm
 | `page` | Page number (1-based) | `2` |
 | `limit` | Items per page | `20` |
 | `sortBy` | Sort (multi allowed) | `createdAt:DESC` |
-| `search` | Full-text search | `john` |
+| `search` | Case-insensitive contains search | `john` |
 | `filter.{col}` | Filter by column | `filter.role=$eq:admin` |
 
 ### Cursor
@@ -208,9 +208,12 @@ const config: PaginateConfig<User> = {
   // Pagination
   paginationType: 'offset',     // 'offset' | 'cursor'
   cursorColumn: 'id',            // default: 'id'
+  cursorStrategy: 'prisma',      // 'prisma' | 'keyset'
+  cursorColumns: ['createdAt', 'id'],
   defaultLimit: 20,
   maxLimit: 100,
   withTotalCount: false,         // cursor mode: include total count
+  countStrategy: 'exact',        // 'exact' | 'none' | 'custom'
 
   // Base where condition
   where: { isActive: true },
@@ -286,7 +289,71 @@ async findAll(@Paginate() query: PaginateQuery) { ... }
 async findAllCursor(@Paginate() query: PaginateQuery) { ... }
 ```
 
+Decorators can document endpoint-specific query capabilities:
+
+```typescript
+@Get()
+@ApiPaginatedResponse(UserDto, {
+  sortableColumns: ['id', 'email', 'createdAt'],
+  searchableColumns: ['email', 'name'],
+  filterableColumns: {
+    role: ['$eq', '$in'],
+    createdAt: ['$gte', '$lte', '$btw'],
+  },
+  allowWithDeleted: true,
+})
+async findAll(@Paginate() query: PaginateQuery) { ... }
+```
+
 If `@nestjs/swagger` is not installed, decorators are no-ops.
+
+## Keyset Cursor Strategy
+
+Use Prisma cursor mode for simple unique cursor columns such as `id`. Use keyset mode when the list is sorted by a non-unique column and needs a stable tie-breaker:
+
+```typescript
+const result = await paginate(query, this.prisma.user, {
+  sortableColumns: ['id', 'createdAt', 'email'],
+  paginationType: 'cursor',
+  cursorStrategy: 'keyset',
+  cursorColumns: ['createdAt', 'id'],
+  defaultSortBy: [['createdAt', 'DESC'], ['id', 'DESC']],
+});
+```
+
+For best performance, add a matching database index for the sort tuple, for example `(createdAt DESC, id DESC)`. Cursor columns should be stable and should not change while clients page through a list.
+
+## Count Strategy
+
+Exact counts are useful for offset UIs, but can be expensive on large filtered lists. Configure the count policy per endpoint:
+
+```typescript
+await paginate(query, this.prisma.user, {
+  sortableColumns: ['id', 'createdAt'],
+  countStrategy: 'none', // omit totalItems and totalPages
+});
+
+await paginate(query, this.prisma.user, {
+  sortableColumns: ['id', 'createdAt'],
+  countStrategy: 'custom',
+  countQuery: ({ delegate, where }) => delegate.count({ where }),
+});
+```
+
+Defaults: offset uses `exact`; cursor uses `none` unless `withTotalCount: true` or `countStrategy: 'exact'` is set.
+
+## Soft Delete
+
+`withDeleted` is parsed from the query string and passed through only when the endpoint opts in:
+
+```typescript
+await paginate(query, this.prisma.user, {
+  sortableColumns: ['id', 'createdAt'],
+  allowWithDeleted: true,
+});
+```
+
+`GET /users?withDeleted=true` passes `withDeleted: true` to `findMany` and `count`. The soft-delete Prisma extension remains responsible for interpreting that flag.
 
 ## Standalone Usage
 
@@ -347,9 +414,18 @@ Measured with PostgreSQL 16, Prisma 6, 10,000 rows, 200 iterations on Apple Sili
 | **Cursor — deep page (sort by id)** | **0.67ms** | **0.66ms** | **0.83ms** | **0.93ms** |
 | Cursor — deep page (sort by createdAt) | 17.56ms | 17.30ms | 17.96ms | 28.14ms |
 | Filtered + sorted | 0.90ms | 0.88ms | 1.11ms | 1.17ms |
-| Full-text search | 8.20ms | 7.71ms | 10.79ms | 21.55ms |
+| Case-insensitive contains search | 8.20ms | 7.71ms | 10.79ms | 21.55ms |
 
 Cursor + PK sort: **0.67ms** at any depth (31% faster than offset). **Note:** Cursor with non-PK sort columns (e.g. `createdAt`) triggers a Prisma subquery — use offset pagination for non-PK ordering.
+
+Decision guide:
+
+| Need | Recommended mode |
+|------|------------------|
+| Jump to arbitrary page | Offset |
+| Infinite scroll by unique `id` | Prisma cursor |
+| Infinite scroll by `createdAt`, `name`, or another non-unique sort | Keyset cursor with tie-breaker |
+| Avoid expensive totals | Cursor or `countStrategy: 'none'` |
 
 > Reproduce: `docker compose up -d && npm run bench`
 

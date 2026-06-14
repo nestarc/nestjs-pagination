@@ -1,4 +1,9 @@
-import { encodeCursor, decodeCursor } from '../cursor.encoder';
+import {
+  decodeCursor,
+  decodeKeysetCursor,
+  encodeCursor,
+  encodeKeysetCursor,
+} from '../cursor.encoder';
 import { InvalidCursorError } from '../../errors/invalid-cursor.error';
 
 describe('encodeCursor', () => {
@@ -58,5 +63,22 @@ describe('decodeCursor', () => {
     const cursor = encodeCursor(original, 'id');
     const decoded = decodeCursor(cursor);
     expect(decoded).toEqual({ id: '10' });
+  });
+});
+
+describe('keyset cursor payloads', () => {
+  it('should encode and decode keyset cursor payloads', () => {
+    const payload = {
+      v: 2 as const,
+      values: { createdAt: '2024-01-01T00:00:00.000Z', id: '10' },
+      sortBy: [['createdAt', 'DESC'], ['id', 'DESC']] as [string, 'DESC'][],
+    };
+    const encoded = encodeKeysetCursor(payload);
+    expect(decodeKeysetCursor(encoded)).toEqual(payload);
+  });
+
+  it('should throw InvalidCursorError for non-keyset payloads', () => {
+    const encoded = Buffer.from(JSON.stringify({ id: '10' })).toString('base64url');
+    expect(() => decodeKeysetCursor(encoded)).toThrow(InvalidCursorError);
   });
 });

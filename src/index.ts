@@ -13,7 +13,7 @@ export { PaginateService } from './paginate.service';
 
 // Interfaces
 export { PaginateQuery } from './interfaces/paginate-query.interface';
-export { PaginateConfig } from './interfaces/paginate-config.interface';
+export { PaginateConfig, CountStrategy } from './interfaces/paginate-config.interface';
 export { Paginated, CursorPaginated } from './interfaces/paginated.interface';
 export { FilterOperator, SortOrder } from './interfaces/filter-operator.type';
 
@@ -23,6 +23,8 @@ export { PaginateDefaults, PAGINATE_DEFAULTS_KEY, PaginateDefaultsOptions } from
 export {
   ApiPaginatedResponse,
   ApiCursorPaginatedResponse,
+  ApiPaginationQuery,
+  ApiPaginationQueryOptions,
 } from './decorators/api-paginated-response.decorator';
 
 // Errors

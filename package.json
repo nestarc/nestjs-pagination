@@ -1,6 +1,6 @@
 {
   "name": "@nestarc/pagination",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Prisma cursor & offset pagination for NestJS with filtering, sorting, search, and Swagger auto-documentation",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,6 +17,14 @@
   "files": [
     "dist"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nestarc/nestjs-pagination.git"
+  },
+  "homepage": "https://nestarc.dev/packages/pagination/",
+  "bugs": {
+    "url": "https://github.com/nestarc/nestjs-pagination/issues"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "bench": "npx prisma generate --schema=benchmarks/prisma/schema.prisma && npx ts-node benchmarks/pagination-overhead.ts",

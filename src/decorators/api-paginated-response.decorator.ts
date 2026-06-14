@@ -1,4 +1,5 @@
 import { Type, applyDecorators } from '@nestjs/common';
+import { FilterOperator } from '../interfaces/filter-operator.type';
 
 let swagger: any;
 try {
@@ -7,12 +8,23 @@ try {
   // @nestjs/swagger not installed — decorators become no-ops
 }
 
-export function ApiPaginatedResponse(dataDto: Type): MethodDecorator {
+export interface ApiPaginationQueryOptions {
+  type?: 'offset' | 'cursor';
+  sortableColumns?: string[];
+  searchableColumns?: string[];
+  filterableColumns?: Record<string, FilterOperator[]>;
+  allowWithDeleted?: boolean;
+}
+
+export function ApiPaginatedResponse(
+  dataDto: Type,
+  queryOptions: Omit<ApiPaginationQueryOptions, 'type'> = {},
+): MethodDecorator {
   if (!swagger) {
     return applyDecorators();
   }
 
-  const { ApiOkResponse, ApiQuery, getSchemaPath } = swagger;
+  const { ApiOkResponse, getSchemaPath } = swagger;
 
   return applyDecorators(
     ApiOkResponse({
@@ -49,19 +61,19 @@ export function ApiPaginatedResponse(dataDto: Type): MethodDecorator {
         ],
       },
     }),
-    ApiQuery({ name: 'page', required: false, type: Number }),
-    ApiQuery({ name: 'limit', required: false, type: Number }),
-    ApiQuery({ name: 'sortBy', required: false, type: String, isArray: true }),
-    ApiQuery({ name: 'search', required: false, type: String }),
+    ApiPaginationQuery({ type: 'offset', ...queryOptions }),
   );
 }
 
-export function ApiCursorPaginatedResponse(dataDto: Type): MethodDecorator {
+export function ApiCursorPaginatedResponse(
+  dataDto: Type,
+  queryOptions: Omit<ApiPaginationQueryOptions, 'type'> = {},
+): MethodDecorator {
   if (!swagger) {
     return applyDecorators();
   }
 
-  const { ApiOkResponse, ApiQuery, getSchemaPath } = swagger;
+  const { ApiOkResponse, getSchemaPath } = swagger;
 
   return applyDecorators(
     ApiOkResponse({
@@ -97,10 +109,60 @@ export function ApiCursorPaginatedResponse(dataDto: Type): MethodDecorator {
         ],
       },
     }),
-    ApiQuery({ name: 'limit', required: false, type: Number }),
-    ApiQuery({ name: 'after', required: false, type: String }),
-    ApiQuery({ name: 'before', required: false, type: String }),
-    ApiQuery({ name: 'sortBy', required: false, type: String, isArray: true }),
-    ApiQuery({ name: 'search', required: false, type: String }),
+    ApiPaginationQuery({ type: 'cursor', ...queryOptions }),
   );
+}
+
+export function ApiPaginationQuery(
+  options: ApiPaginationQueryOptions = {},
+): MethodDecorator {
+  if (!swagger) {
+    return applyDecorators();
+  }
+
+  const { ApiQuery } = swagger;
+  const type = options.type ?? 'offset';
+  const decorators: MethodDecorator[] = [
+    ...(type === 'offset'
+      ? [ApiQuery({ name: 'page', required: false, type: Number })]
+      : [
+          ApiQuery({ name: 'after', required: false, type: String }),
+          ApiQuery({ name: 'before', required: false, type: String }),
+        ]),
+    ApiQuery({ name: 'limit', required: false, type: Number }),
+    ApiQuery({
+      name: 'sortBy',
+      required: false,
+      type: String,
+      isArray: true,
+      example: options.sortableColumns?.[0]
+        ? [`${options.sortableColumns[0]}:ASC`]
+        : undefined,
+    }),
+    ApiQuery({
+      name: 'search',
+      required: false,
+      type: String,
+      description: options.searchableColumns?.length
+        ? `Searches: ${options.searchableColumns.join(', ')}`
+        : undefined,
+    }),
+  ];
+
+  if (options.filterableColumns) {
+    for (const [column, operators] of Object.entries(options.filterableColumns)) {
+      decorators.push(ApiQuery({
+        name: `filter.${column}`,
+        required: false,
+        type: String,
+        description: `Allowed operators: ${operators.join(', ')}`,
+      }));
+    }
+  }
+
+  if (options.allowWithDeleted) {
+    decorators.push(ApiQuery({ name: 'withDeleted', required: false, type: Boolean }));
+  }
+
+  return applyDecorators(...decorators);
 }

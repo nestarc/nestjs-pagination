@@ -40,6 +40,29 @@ describe('paginate — offset mode', () => {
     expect(result.meta.totalPages).toBe(3);
   });
 
+  it('should omit totals when countStrategy is none in offset mode', async () => {
+    const delegate = createMockDelegate([{ id: '1' }], 50);
+    const query: PaginateQuery = { page: 1, limit: 20, path: '/users' };
+    const result = (await paginate(query, delegate, { ...baseConfig, countStrategy: 'none' })) as any;
+    expect(result.meta.totalItems).toBeUndefined();
+    expect(result.meta.totalPages).toBeUndefined();
+    expect(delegate.count).not.toHaveBeenCalled();
+  });
+
+  it('should use custom countQuery when countStrategy is custom', async () => {
+    const delegate = createMockDelegate([], 50);
+    const countQuery = jest.fn().mockResolvedValue(7);
+    const query: PaginateQuery = { page: 1, limit: 20, path: '/users' };
+    const result = (await paginate(query, delegate, {
+      ...baseConfig,
+      countStrategy: 'custom',
+      countQuery,
+    })) as any;
+    expect(result.meta.totalItems).toBe(7);
+    expect(countQuery).toHaveBeenCalledWith(expect.objectContaining({ where: {}, delegate, query }));
+    expect(delegate.count).not.toHaveBeenCalled();
+  });
+
   it('should use default limit when not provided', async () => {
     const delegate = createMockDelegate([], 0);
     const query: PaginateQuery = { path: '/users' };
@@ -119,6 +142,22 @@ describe('paginate — offset mode', () => {
     expect(delegate.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ isActive: true }) }),
     );
+  });
+
+  it('should pass withDeleted to findMany and count when allowed', async () => {
+    const delegate = createMockDelegate([], 0);
+    const query: PaginateQuery = { path: '/users', withDeleted: true };
+    await paginate(query, delegate, { ...baseConfig, allowWithDeleted: true });
+    expect(delegate.findMany).toHaveBeenCalledWith(expect.objectContaining({ withDeleted: true }));
+    expect(delegate.count).toHaveBeenCalledWith(expect.objectContaining({ withDeleted: true }));
+  });
+
+  it('should ignore withDeleted when not allowed', async () => {
+    const delegate = createMockDelegate([], 0);
+    const query: PaginateQuery = { path: '/users', withDeleted: true };
+    await paginate(query, delegate, baseConfig);
+    expect(delegate.findMany.mock.calls[0][0].withDeleted).toBeUndefined();
+    expect(delegate.count.mock.calls[0][0].withDeleted).toBeUndefined();
   });
 
   it('should apply relations as include', async () => {

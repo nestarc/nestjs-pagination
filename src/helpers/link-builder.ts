@@ -26,6 +26,10 @@ function buildQueryString(
     params.set('search', query.search);
   }
 
+  if (query.withDeleted === true) {
+    params.set('withDeleted', 'true');
+  }
+
   // Preserve filters
   if (query.filter) {
     for (const [col, value] of Object.entries(query.filter)) {

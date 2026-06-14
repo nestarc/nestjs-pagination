@@ -50,6 +50,18 @@ describe('parsePaginateQuery', () => {
     expect(result.before).toBe('xyz789');
   });
 
+  it.each(['true', '1', 'yes'])('should parse withDeleted=%s as true', (value) => {
+    const req = mockRequest({ withDeleted: value });
+    const result = parsePaginateQuery(req);
+    expect(result.withDeleted).toBe(true);
+  });
+
+  it.each(['false', '0', 'no', 'anything'])('should parse withDeleted=%s as false', (value) => {
+    const req = mockRequest({ withDeleted: value });
+    const result = parsePaginateQuery(req);
+    expect(result.withDeleted).toBe(false);
+  });
+
   it('should clamp page to minimum 1', () => {
     const req = mockRequest({ page: '0' });
     const result = parsePaginateQuery(req);

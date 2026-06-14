@@ -64,6 +64,16 @@ describe('buildOffsetLinks', () => {
     const links = buildOffsetLinks(query, 1, 20, 5);
     expect(links.current).toContain('filter.role=');
   });
+
+  it('should preserve withDeleted in links when true', () => {
+    const query: PaginateQuery = {
+      path: '/users',
+      withDeleted: true,
+    };
+    const links = buildOffsetLinks(query, 1, 20, 5);
+    expect(links.current).toContain('withDeleted=true');
+    expect(links.next).toContain('withDeleted=true');
+  });
 });
 
 describe('buildCursorLinks', () => {
@@ -110,6 +120,16 @@ describe('buildCursorLinks', () => {
     const links = buildCursorLinks(query, 20, 'abc', null, true, false);
     expect(links.next).toContain('sortBy=');
     expect(links.current).toContain('sortBy=');
+  });
+
+  it('should preserve withDeleted in cursor links when true', () => {
+    const query: PaginateQuery = {
+      path: '/users',
+      withDeleted: true,
+    };
+    const links = buildCursorLinks(query, 20, 'abc', null, true, false);
+    expect(links.current).toContain('withDeleted=true');
+    expect(links.next).toContain('withDeleted=true');
   });
 });
 

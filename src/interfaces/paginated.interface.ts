@@ -4,9 +4,9 @@ export interface Paginated<T> {
   data: T[];
   meta: {
     itemsPerPage: number;
-    totalItems: number;
+    totalItems?: number;
     currentPage: number;
-    totalPages: number;
+    totalPages?: number;
     sortBy: [string, SortOrder][];
     search?: string;
     filter?: Record<string, string>;

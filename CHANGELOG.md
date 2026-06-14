@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-06-14
+
+### Added
+
+- **Keyset composite cursor strategy** — stable cursor pagination with non-unique sort columns and tie-breaker columns
+- **Count strategy options** — exact, omitted, and custom count behavior for cost-aware pagination
+- **Config-aware Swagger query documentation** — endpoint-specific sort, search, filter, and soft-delete query params
+- **`withDeleted` query parsing and pass-through** — opt-in soft-delete integration via `allowWithDeleted`
+
+### Changed
+
+- Package metadata now includes repository, homepage, and issue links for npm discoverability
+- Documentation now describes current search as case-insensitive contains search
+
 ## [0.1.0] - 2026-04-05
 
 ### Added
@@ -11,7 +25,7 @@ All notable changes to this project will be documented in this file.
   - Cursor mode: Base64url cursor encoding, `take: limit+1` for hasNextPage detection, forward (`after`) and backward (`before`) navigation
 - **12 filter operators**: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$ilike`, `$btw`, `$null`, `$not:null`
 - **Multi-column sorting** with `nullSort` positioning (`'first'` | `'last'`)
-- **Full-text search** across multiple columns via case-insensitive `OR` conditions
+- **Case-insensitive contains search** across multiple columns via `OR` conditions
 - **Column/operator whitelisting** — `sortableColumns`, `filterableColumns` with per-column operator restrictions
 - **`PaginationModule`** — `forRoot()` / `forRootAsync()` DynamicModule for global defaults
 - **`PaginateService`** — injectable service that merges module options, `@PaginateDefaults` metadata, and per-endpoint config (priority: config > decorator > module)

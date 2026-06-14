@@ -1,12 +1,24 @@
 import { PaginateQuery } from './interfaces/paginate-query.interface';
-import { PaginateConfig } from './interfaces/paginate-config.interface';
+import { CountStrategy, PaginateConfig } from './interfaces/paginate-config.interface';
 import { Paginated, CursorPaginated } from './interfaces/paginated.interface';
 import { DEFAULT_LIMIT, DEFAULT_MAX_LIMIT, DEFAULT_PAGE } from './pagination.constants';
 import { parseFilters } from './filter/filter-parser';
 import { validateSortColumns, buildOrderBy } from './filter/sort-builder';
 import { buildSearchCondition } from './filter/search-builder';
 import { buildOffsetLinks, buildCursorLinks } from './helpers/link-builder';
-import { encodeCursor, decodeCursor } from './cursor/cursor.encoder';
+import {
+  CursorPayload,
+  decodeCursor,
+  decodeKeysetCursor,
+  encodeCursor,
+  encodeKeysetCursor,
+} from './cursor/cursor.encoder';
+import {
+  buildKeysetWhere,
+  mergeKeysetWhere,
+  resolveKeysetSortBy,
+  validateKeysetConfig,
+} from './cursor/keyset-cursor';
 
 export async function paginate<T>(
   query: PaginateQuery,
@@ -47,28 +59,32 @@ async function paginateOffset<T>(
     skip: (page - 1) * limit,
     take: limit,
   };
+  applyWithDeleted(findManyArgs, query, config);
 
   applySelectAndRelations(findManyArgs, config);
 
+  const countStrategy = resolveCountStrategy(config, 'offset');
   const [data, totalItems] = await Promise.all([
     delegate.findMany(findManyArgs),
-    delegate.count({ where }),
+    runCount(countStrategy, where, delegate, query, config),
   ]);
 
-  const totalPages = Math.max(Math.ceil(totalItems / limit), 1);
+  const totalPages = totalItems !== undefined
+    ? Math.max(Math.ceil(totalItems / limit), 1)
+    : undefined;
 
   return {
     data,
     meta: {
       itemsPerPage: limit,
-      totalItems,
       currentPage: page,
-      totalPages,
+      ...(totalItems !== undefined && { totalItems }),
+      ...(totalPages !== undefined && { totalPages }),
       sortBy: sortBy ?? [],
       ...(query.search && { search: query.search }),
       ...(query.filter && { filter: flattenFilter(query.filter) }),
     },
-    links: buildOffsetLinks(query, page, limit, totalPages),
+    links: buildOffsetLinks(query, page, limit, totalPages ?? page),
   };
 }
 
@@ -79,22 +95,40 @@ async function paginateCursor<T>(
 ): Promise<CursorPaginated<T>> {
   const limit = resolveLimit(query.limit, config);
   const cursorColumn = (config.cursorColumn ?? 'id') as string;
+  const isKeyset = config.cursorStrategy === 'keyset';
+  const cursorColumns = isKeyset
+    ? validateKeysetConfig(config.cursorColumns, config.sortableColumns)
+    : [];
 
-  const sortBy = query.sortBy ?? config.defaultSortBy;
+  let sortBy = query.sortBy ?? config.defaultSortBy;
+  if (isKeyset) {
+    sortBy = resolveKeysetSortBy(sortBy, cursorColumns);
+  }
   if (sortBy) {
     validateSortColumns(sortBy, config.sortableColumns);
   }
 
   const orderBy = buildOrderBy(sortBy, config.nullSort);
-  const where = buildWhere(query, config);
+  let where = buildWhere(query, config);
 
   const findManyArgs: any = {
     where,
     orderBy,
     take: limit + 1,
   };
+  applyWithDeleted(findManyArgs, query, config);
 
-  if (query.after) {
+  if (isKeyset && query.after) {
+    const cursorValue = decodeKeyset(query.after, config);
+    const keysetWhere = buildKeysetWhere(cursorValue, sortBy ?? [], 'after');
+    where = mergeKeysetWhere(where, keysetWhere);
+    findManyArgs.where = where;
+  } else if (isKeyset && query.before) {
+    const cursorValue = decodeKeyset(query.before, config);
+    const keysetWhere = buildKeysetWhere(cursorValue, sortBy ?? [], 'before');
+    where = mergeKeysetWhere(where, keysetWhere);
+    findManyArgs.where = where;
+  } else if (query.after) {
     const cursorValue = decodeCursor(query.after);
     findManyArgs.cursor = cursorValue;
     findManyArgs.skip = 1;
@@ -113,11 +147,19 @@ async function paginateCursor<T>(
   let hasNextPage: boolean;
 
   if (query.before) {
+    if (isKeyset) {
+      hasNextPage = true;
+      hasPreviousPage = data.length > limit;
+      if (hasPreviousPage) {
+        data.pop();
+      }
+    } else {
     // Navigating backward — we fetched limit+1 items backward
-    hasNextPage = true; // We came from a forward page, so there's always a next
-    hasPreviousPage = data.length > limit;
-    if (hasPreviousPage) {
-      data = data.slice(data.length - limit);
+      hasNextPage = true; // We came from a forward page, so there's always a next
+      hasPreviousPage = data.length > limit;
+      if (hasPreviousPage) {
+        data = data.slice(data.length - limit);
+      }
     }
   } else if (query.after) {
     // Navigating forward from a cursor — there's always a previous
@@ -135,8 +177,12 @@ async function paginateCursor<T>(
     }
   }
 
-  const startCursor = data.length > 0 ? encodeCursor(data[0] as any, cursorColumn) : null;
-  const endCursor = data.length > 0 ? encodeCursor(data[data.length - 1] as any, cursorColumn) : null;
+  const startCursor = data.length > 0
+    ? encodeCursorForStrategy(data[0] as any, cursorColumn, cursorColumns, sortBy ?? [], config)
+    : null;
+  const endCursor = data.length > 0
+    ? encodeCursorForStrategy(data[data.length - 1] as any, cursorColumn, cursorColumns, sortBy ?? [], config)
+    : null;
 
   const meta: CursorPaginated<T>['meta'] = {
     itemsPerPage: limit,
@@ -149,8 +195,10 @@ async function paginateCursor<T>(
     ...(query.filter && { filter: flattenFilter(query.filter) }),
   };
 
-  if (config.withTotalCount) {
-    meta.totalItems = await delegate.count({ where });
+  const countStrategy = resolveCountStrategy(config, 'cursor');
+  const totalItems = await runCount(countStrategy, where, delegate, query, config);
+  if (totalItems !== undefined) {
+    meta.totalItems = totalItems;
   }
 
   return {
@@ -208,6 +256,74 @@ function applySelectAndRelations<T>(
   } else if (config.relations) {
     findManyArgs.include = config.relations;
   }
+}
+
+function applyWithDeleted<T>(
+  args: any,
+  query: PaginateQuery,
+  config: PaginateConfig<T>,
+): void {
+  if (query.withDeleted === true && config.allowWithDeleted === true) {
+    args.withDeleted = true;
+  }
+}
+
+function decodeKeyset<T>(cursor: string, config: PaginateConfig<T>): CursorPayload {
+  return config.decodeCursor ? config.decodeCursor(cursor) : decodeKeysetCursor(cursor);
+}
+
+function encodeCursorForStrategy<T>(
+  record: Record<string, any>,
+  cursorColumn: string,
+  cursorColumns: string[],
+  sortBy: [string, any][],
+  config: PaginateConfig<T>,
+): string {
+  if (config.cursorStrategy !== 'keyset') {
+    return encodeCursor(record, cursorColumn);
+  }
+
+  const payload: CursorPayload = {
+    v: 2,
+    values: Object.fromEntries(
+      cursorColumns.map((column) => [column, record[column] ?? null]),
+    ),
+    sortBy,
+  };
+
+  return config.encodeCursor ? config.encodeCursor(payload) : encodeKeysetCursor(payload);
+}
+
+function resolveCountStrategy<T>(
+  config: PaginateConfig<T>,
+  mode: 'offset' | 'cursor',
+): CountStrategy {
+  if (config.countStrategy) return config.countStrategy;
+  if (config.withTotalCount === true) return 'exact';
+  return mode === 'offset' ? 'exact' : 'none';
+}
+
+async function runCount<T>(
+  strategy: CountStrategy,
+  where: Record<string, any>,
+  delegate: { count: (args: any) => Promise<number> },
+  query: PaginateQuery,
+  config: PaginateConfig<T>,
+): Promise<number | undefined> {
+  if (strategy === 'none') {
+    return undefined;
+  }
+
+  if (strategy === 'custom') {
+    if (!config.countQuery) {
+      throw new Error('countQuery is required when countStrategy is custom');
+    }
+    return config.countQuery({ where, delegate, query, config });
+  }
+
+  const countArgs = { where };
+  applyWithDeleted(countArgs, query, config);
+  return delegate.count(countArgs);
 }
 
 function resolveLimit<T>(
