@@ -17,6 +17,7 @@ Prisma cursor & offset pagination for NestJS with filtering, sorting, search, an
 - **Column/operator whitelisting** for security
 - **Swagger** auto-documentation (optional)
 - **Standalone** `paginate()` function — works without NestJS
+- **Prisma 7-first** compatibility, with Prisma 5 and 6 retained in the peer range
 - Compatible with `@nestarc/tenancy` (RLS) and `@nestarc/soft-delete` via Prisma extension chain
 
 ## Quick Start
@@ -27,7 +28,9 @@ Prisma cursor & offset pagination for NestJS with filtering, sorting, search, an
 npm install @nestarc/pagination
 ```
 
-Peer dependencies: `@nestjs/common`, `@nestjs/core`, `@prisma/client`, `reflect-metadata`, `rxjs`
+Peer dependencies: `@nestjs/common`, `@nestjs/core`, `@prisma/client` 5/6/7, `reflect-metadata`, `rxjs`
+
+Prisma 7 is the primary generated-client and CI target. Prisma 5 and 6 remain accepted peer versions for existing applications.
 
 ### 1. Register the module
 
@@ -65,13 +68,13 @@ export class UserController {
 ### 3. Use in a service
 
 ```typescript
-import { paginate, PaginateQuery, PaginateConfig, Paginated } from '@nestarc/pagination';
+import { paginate, PaginateQuery } from '@nestarc/pagination';
 
 @Injectable()
 export class UserService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(query: PaginateQuery): Promise<Paginated<User>> {
+  async findAll(query: PaginateQuery) {
     return paginate(query, this.prisma.user, {
       sortableColumns: ['id', 'name', 'email', 'createdAt'],
       defaultSortBy: [['createdAt', 'DESC']],
@@ -359,11 +362,17 @@ await paginate(query, this.prisma.user, {
 
 `paginate()` works without NestJS:
 
+For a direct PostgreSQL connection with Prisma 7, install `@prisma/adapter-pg` and `pg` alongside your generated client.
+
 ```typescript
 import { paginate } from '@nestarc/pagination';
-import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from './generated/prisma/client';
 
-const prisma = new PrismaClient();
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL!,
+});
+const prisma = new PrismaClient({ adapter });
 
 const result = await paginate(
   { page: 1, limit: 20, path: '/users' },
@@ -404,19 +413,19 @@ Unknown sort/filter columns throw errors (not silently ignored) to prevent clien
 
 ## Performance
 
-Measured with PostgreSQL 16, Prisma 6, 10,000 rows, 200 iterations on Apple Silicon:
+Measured with PostgreSQL 16, Prisma 7.9.1, 10,000 rows, 200 iterations on Apple Silicon:
 
 | Scenario | Avg | P50 | P95 | P99 |
 |----------|-----|-----|-----|-----|
-| Offset — page 1 | 0.99ms | 0.97ms | 1.14ms | 1.19ms |
-| Offset — page 100 | 0.98ms | 0.96ms | 1.11ms | 1.31ms |
-| **Cursor — first page (sort by id)** | **0.53ms** | **0.51ms** | **0.70ms** | **0.80ms** |
-| **Cursor — deep page (sort by id)** | **0.67ms** | **0.66ms** | **0.83ms** | **0.93ms** |
-| Cursor — deep page (sort by createdAt) | 17.56ms | 17.30ms | 17.96ms | 28.14ms |
-| Filtered + sorted | 0.90ms | 0.88ms | 1.11ms | 1.17ms |
-| Case-insensitive contains search | 8.20ms | 7.71ms | 10.79ms | 21.55ms |
+| Offset — page 1 | 1.04ms | 1.03ms | 1.21ms | 1.27ms |
+| Offset — page 100 | 2.61ms | 2.53ms | 2.94ms | 4.67ms |
+| **Cursor — first page (sort by id)** | **0.56ms** | **0.53ms** | **0.76ms** | **1.01ms** |
+| **Cursor — deep page (sort by id)** | **0.58ms** | **0.55ms** | **0.78ms** | **0.92ms** |
+| Cursor — deep page (sort by createdAt) | 11.05ms | 11.06ms | 11.51ms | 11.70ms |
+| Filtered + sorted | 0.92ms | 0.92ms | 1.16ms | 1.29ms |
+| Case-insensitive contains search | 8.55ms | 8.35ms | 10.70ms | 13.31ms |
 
-Cursor + PK sort: **0.67ms** at any depth (31% faster than offset). **Note:** Cursor with non-PK sort columns (e.g. `createdAt`) triggers a Prisma subquery — use offset pagination for non-PK ordering.
+Cursor + PK sort stays near **0.58ms** at depth and is 78% faster than deep offset in this run. **Note:** Cursor with non-PK sort columns (e.g. `createdAt`) triggers a Prisma subquery — use offset or keyset pagination for non-PK ordering.
 
 Decision guide:
 

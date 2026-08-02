@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-08-02
+
+### Added
+
+- Prisma 7 generated-client type verification and PostgreSQL offset/cursor smoke tests in CI
+- Prisma 7 benchmark configuration using `prisma.config.ts` and the PostgreSQL driver adapter
+
+### Changed
+
+- Prisma 7 is now the primary development and CI version while Prisma 5 and 6 remain supported peer ranges
+- CI now runs on Node.js 20, 22, and 24 to match Prisma 7 runtime requirements
+- Standalone Prisma setup documentation now uses a generated client and driver adapter
+- Performance figures were rerun with Prisma 7.9.1 and PostgreSQL 16
+
 ## [0.2.0] - 2026-06-14
 
 ### Added

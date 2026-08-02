@@ -12,16 +12,12 @@
  * Usage:
  *   docker compose up -d
  *   DATABASE_URL=postgresql://test:test@localhost:5434/pagination_test \
- *     npx prisma generate --schema=benchmarks/prisma/schema.prisma && \
- *     npx ts-node benchmarks/pagination-overhead.ts
+ *     npm run bench
  */
 
 import { paginate } from '../src/paginate';
 import { PaginateQuery } from '../src/interfaces/paginate-query.interface';
-
-const DATABASE_URL =
-  process.env.DATABASE_URL ??
-  'postgresql://test:test@localhost:5434/pagination_test';
+import { createPrismaClient } from './prisma-client';
 
 const WARMUP = 20;
 const ITERATIONS = 200;
@@ -77,8 +73,7 @@ function printResult(r: BenchResult) {
 async function main() {
   console.log('=== @nestarc/pagination Benchmark ===\n');
 
-  const { PrismaClient } = require('./generated/client');
-  const prisma = new PrismaClient({ datasourceUrl: DATABASE_URL });
+  const prisma = createPrismaClient();
   await prisma.$connect();
 
   // Setup table
