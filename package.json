@@ -1,6 +1,6 @@
 {
   "name": "@nestarc/pagination",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Prisma cursor & offset pagination for NestJS with filtering, sorting, search, and Swagger auto-documentation",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -32,7 +32,8 @@
     "test": "jest",
     "test:cov": "jest --coverage",
     "test:prisma7:types": "npm run prisma:generate && tsc -p tsconfig.prisma7.json",
-    "test:prisma7:smoke": "npm run prisma:generate && tsx benchmarks/prisma7-smoke.ts"
+    "test:integration": "npm run build && npm run prisma:generate && tsx benchmarks/prisma7-smoke.ts",
+    "test:prisma7:smoke": "npm run test:integration"
   },
   "peerDependencies": {
     "@nestjs/common": "^10.0.0 || ^11.0.0",

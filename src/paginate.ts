@@ -1,6 +1,8 @@
 import { PaginateQuery } from './interfaces/paginate-query.interface';
 import { CountStrategy, PaginateConfig } from './interfaces/paginate-config.interface';
 import { Paginated, CursorPaginated } from './interfaces/paginated.interface';
+import { SortOrder } from './interfaces/filter-operator.type';
+import { InvalidCursorError } from './errors/invalid-cursor.error';
 import { DEFAULT_LIMIT, DEFAULT_MAX_LIMIT, DEFAULT_PAGE } from './pagination.constants';
 import { parseFilters } from './filter/filter-parser';
 import { validateSortColumns, buildOrderBy } from './filter/sort-builder';
@@ -93,6 +95,10 @@ async function paginateCursor<T>(
   delegate: { findMany: (args: any) => Promise<T[]>; count: (args: any) => Promise<number> },
   config: PaginateConfig<T>,
 ): Promise<CursorPaginated<T>> {
+  if (query.after !== undefined && query.before !== undefined) {
+    throw new InvalidCursorError('provide either after or before, not both');
+  }
+
   const limit = resolveLimit(query.limit, config);
   const cursorColumn = (config.cursorColumn ?? 'id') as string;
   const isKeyset = config.cursorStrategy === 'keyset';
@@ -108,8 +114,16 @@ async function paginateCursor<T>(
     validateSortColumns(sortBy, config.sortableColumns);
   }
 
-  const orderBy = buildOrderBy(sortBy, config.nullSort);
-  let where = buildWhere(query, config);
+  const isBackwardKeyset = isKeyset && !!query.before;
+  const querySortBy = isBackwardKeyset
+    ? sortBy?.map(([column, order]): [string, SortOrder] => [column, order === 'ASC' ? 'DESC' : 'ASC'])
+    : sortBy;
+  const queryNullSort = isBackwardKeyset && config.nullSort
+    ? config.nullSort === 'first' ? 'last' : 'first'
+    : config.nullSort;
+  const orderBy = buildOrderBy(querySortBy, queryNullSort);
+  // Counts describe the entire filtered list, independent of cursor position.
+  const where = buildWhere(query, config);
 
   const findManyArgs: any = {
     where,
@@ -121,13 +135,11 @@ async function paginateCursor<T>(
   if (isKeyset && query.after) {
     const cursorValue = decodeKeyset(query.after, config);
     const keysetWhere = buildKeysetWhere(cursorValue, sortBy ?? [], 'after');
-    where = mergeKeysetWhere(where, keysetWhere);
-    findManyArgs.where = where;
+    findManyArgs.where = mergeKeysetWhere(where, keysetWhere);
   } else if (isKeyset && query.before) {
     const cursorValue = decodeKeyset(query.before, config);
     const keysetWhere = buildKeysetWhere(cursorValue, sortBy ?? [], 'before');
-    where = mergeKeysetWhere(where, keysetWhere);
-    findManyArgs.where = where;
+    findManyArgs.where = mergeKeysetWhere(where, keysetWhere);
   } else if (query.after) {
     const cursorValue = decodeCursor(query.after);
     findManyArgs.cursor = cursorValue;
@@ -140,6 +152,10 @@ async function paginateCursor<T>(
   }
 
   applySelectAndRelations(findManyArgs, config);
+  const requiredCursorColumns = isKeyset
+    ? (sortBy ?? []).map(([column]) => column)
+    : [cursorColumn];
+  const internalColumns = selectCursorColumns(findManyArgs, requiredCursorColumns);
 
   let data = await delegate.findMany(findManyArgs);
 
@@ -153,8 +169,10 @@ async function paginateCursor<T>(
       if (hasPreviousPage) {
         data.pop();
       }
+      // The query fetched nearest predecessors first; return the requested order.
+      data.reverse();
     } else {
-    // Navigating backward — we fetched limit+1 items backward
+      // Navigating backward — we fetched limit+1 items backward
       hasNextPage = true; // We came from a forward page, so there's always a next
       hasPreviousPage = data.length > limit;
       if (hasPreviousPage) {
@@ -178,10 +196,10 @@ async function paginateCursor<T>(
   }
 
   const startCursor = data.length > 0
-    ? encodeCursorForStrategy(data[0] as any, cursorColumn, cursorColumns, sortBy ?? [], config)
+    ? encodeCursorForStrategy(data[0] as any, cursorColumn, sortBy ?? [], config)
     : null;
   const endCursor = data.length > 0
-    ? encodeCursorForStrategy(data[data.length - 1] as any, cursorColumn, cursorColumns, sortBy ?? [], config)
+    ? encodeCursorForStrategy(data[data.length - 1] as any, cursorColumn, sortBy ?? [], config)
     : null;
 
   const meta: CursorPaginated<T>['meta'] = {
@@ -202,10 +220,35 @@ async function paginateCursor<T>(
   }
 
   return {
-    data,
+    data: omitInternalColumns(data, internalColumns),
     meta,
     links: buildCursorLinks(query, limit, endCursor, startCursor, hasNextPage, hasPreviousPage),
   };
+}
+
+function selectCursorColumns(findManyArgs: any, columns: string[]): string[] {
+  if (!findManyArgs.select) return [];
+
+  const internalColumns: string[] = [];
+  for (const column of columns) {
+    if (findManyArgs.select[column] !== true) {
+      findManyArgs.select[column] = true;
+      internalColumns.push(column);
+    }
+  }
+  return internalColumns;
+}
+
+function omitInternalColumns<T>(data: T[], columns: string[]): T[] {
+  if (columns.length === 0) return data;
+
+  return data.map((record) => {
+    const selected = { ...record };
+    for (const column of columns) {
+      delete (selected as Record<string, unknown>)[column];
+    }
+    return selected;
+  });
 }
 
 function buildWhere<T>(
@@ -275,8 +318,7 @@ function decodeKeyset<T>(cursor: string, config: PaginateConfig<T>): CursorPaylo
 function encodeCursorForStrategy<T>(
   record: Record<string, any>,
   cursorColumn: string,
-  cursorColumns: string[],
-  sortBy: [string, any][],
+  sortBy: [string, SortOrder][],
   config: PaginateConfig<T>,
 ): string {
   if (config.cursorStrategy !== 'keyset') {
@@ -286,7 +328,7 @@ function encodeCursorForStrategy<T>(
   const payload: CursorPayload = {
     v: 2,
     values: Object.fromEntries(
-      cursorColumns.map((column) => [column, record[column] ?? null]),
+      sortBy.map(([column]) => [column, record[column] ?? null]),
     ),
     sortBy,
   };

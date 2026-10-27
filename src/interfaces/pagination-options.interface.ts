@@ -6,8 +6,11 @@ export interface PaginationModuleOptions {
   maxLimit?: number;
   defaultPaginationType?: 'offset' | 'cursor';
   defaultSortBy?: [string, SortOrder][];
+  /** @deprecated Currently ignored. Pagination links are always included. */
   withLinks?: boolean;
+  /** Include totals in cursor responses by default; endpoint countStrategy takes precedence. */
   withTotalCount?: boolean;
+  /** @deprecated Currently ignored. Pagination metadata always uses camelCase. */
   fieldNamingStrategy?: 'camelCase' | 'snake_case';
 }
 

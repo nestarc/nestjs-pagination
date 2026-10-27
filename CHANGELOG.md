@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-10-27
+
+### Fixed
+
+- Keyset `before` navigation returns the immediately preceding page, including from deep pages and across tied sort values, while preserving the requested output order
+- Cursor requests containing both `after` and `before` return `400 Bad Request` (`InvalidCursorError`)
+- Keyset exact and custom counts use the entire result set matching base conditions, filters, and search; cursor boundaries no longer reduce `totalItems`
+- Keyset cursors include every effective sort column, so an allowed sort column outside `cursorColumns` remains usable on subsequent pages
+- Cursor fields omitted by `select` are fetched for cursor generation; only internally added fields are removed from returned `data`, preserving explicitly selected fields
+- `PaginateService` applies `withTotalCount` from `forRoot()` and `forRootAsync()`, preserving endpoint overrides including `false` and the precedence of an explicit `countStrategy`
+- Quick Start uses the injected `PaginateService` so registered module defaults take effect
+
+### Added
+
+- PostgreSQL integration suite with nine scenario groups: offset/Prisma cursor navigation; four composite keyset round trips covering `createdAt`/`id` ASC/ASC, ASC/DESC, DESC/ASC, and DESC/DESC; filtered exact/custom totals; additional sort fields and selection; deleted boundary rows; and Nest module defaults, overrides, and isolation
+- Integration runs exercise the built package with a generated Prisma 7 client, use a unique schema, and clean it up without clearing existing application or benchmark tables
+- `test:integration` script, also used by the existing `test:prisma7:smoke` command
+
+### Changed
+
+- Deprecated the unused `withLinks` and `fieldNamingStrategy` module options; links remain included and metadata remains camelCase
+- Documented standalone configuration, keyset requirements and cursor contents, count semantics, and integration test setup
+- Qualified the existing benchmark comparison to explain its different sorting and count workloads
+
+### Upgrade Notes
+
+- Cursor endpoints using `PaginateService` with a module-level `withTotalCount: true` now issue the count query and return `meta.totalItems`. Set endpoint `withTotalCount: false` to override that default, or `countStrategy: 'none'` to explicitly disable counting.
+- For keyset endpoints, treat `totalItems` as the size of the entire matching result set. Code that previously interpreted it as the number of rows remaining after a cursor should be updated.
+- Restart a traversal from its first page if a cached keyset cursor lacks a value for any active sort column. Newly generated cursors include all effective sort values, even when those fields are omitted from returned `data` by `select`.
+- Send only one of `after` or `before` per request; sending both now returns HTTP 400.
+
 ## [0.3.0] - 2026-08-02
 
 ### Added

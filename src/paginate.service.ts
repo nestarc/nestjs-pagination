@@ -55,6 +55,7 @@ export class PaginateService {
         config.paginationType ??
         defaults?.paginationType ??
         this.moduleOptions.defaultPaginationType,
+      withTotalCount: config.withTotalCount ?? this.moduleOptions.withTotalCount,
     };
   }
 }

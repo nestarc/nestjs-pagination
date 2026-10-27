@@ -47,8 +47,8 @@ jobs:
       - name: Prisma 7 type compatibility
         run: npm run test:prisma7:types
 
-      - name: Prisma 7 database smoke test
-        run: npm run test:prisma7:smoke
+      - name: PostgreSQL pagination integration tests
+        run: npm run test:integration
 
       - name: Test with coverage
         run: npm test -- --coverage --runInBand
