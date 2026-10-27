@@ -1,4 +1,24 @@
+import 'reflect-metadata';
+
 describe('ApiPaginatedResponse', () => {
+  it('documents the unknown last-page link as nullable', async () => {
+    const { ApiPaginatedResponse } = await import('../api-paginated-response.decorator');
+    class TestDto { id!: string; }
+    class TestController {
+      list() { return []; }
+    }
+    ApiPaginatedResponse(TestDto)(
+      TestController.prototype,
+      'list',
+      Object.getOwnPropertyDescriptor(TestController.prototype, 'list')!,
+    );
+
+    const responses = Reflect.getMetadata('swagger/apiResponse', TestController.prototype.list);
+    expect(responses[200].schema.allOf[0].properties.links.properties.last).toEqual({
+      type: 'string', nullable: true,
+    });
+  });
+
   it('should export ApiPaginatedResponse function', async () => {
     const mod = await import('../api-paginated-response.decorator');
     expect(typeof mod.ApiPaginatedResponse).toBe('function');

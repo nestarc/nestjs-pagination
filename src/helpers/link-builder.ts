@@ -50,13 +50,14 @@ export function buildOffsetLinks(
   query: PaginateQuery,
   currentPage: number,
   limit: number,
-  totalPages: number,
+  totalPages: number | undefined,
+  hasNextPage = false,
 ): {
   first: string;
   previous: string | null;
   current: string;
   next: string | null;
-  last: string;
+  last: string | null;
 } {
   const base = { limit: String(limit) };
   return {
@@ -65,10 +66,12 @@ export function buildOffsetLinks(
       ? buildQueryString(query.path, query, { page: String(currentPage - 1), ...base })
       : null,
     current: buildQueryString(query.path, query, { page: String(currentPage), ...base }),
-    next: currentPage < totalPages
+    next: (totalPages === undefined ? hasNextPage : currentPage < totalPages)
       ? buildQueryString(query.path, query, { page: String(currentPage + 1), ...base })
       : null,
-    last: buildQueryString(query.path, query, { page: String(totalPages), ...base }),
+    last: totalPages === undefined
+      ? null
+      : buildQueryString(query.path, query, { page: String(totalPages), ...base }),
   };
 }
 

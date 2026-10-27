@@ -1,6 +1,7 @@
 import { paginate } from '../paginate';
 import { PaginateQuery } from '../interfaces/paginate-query.interface';
 import { PaginateConfig } from '../interfaces/paginate-config.interface';
+import { Paginated } from '../interfaces/paginated.interface';
 import { InvalidSortColumnError } from '../errors/invalid-sort-column.error';
 import { InvalidFilterColumnError } from '../errors/invalid-filter-column.error';
 
@@ -47,6 +48,101 @@ describe('paginate — offset mode', () => {
     expect(result.meta.totalItems).toBeUndefined();
     expect(result.meta.totalPages).toBeUndefined();
     expect(delegate.count).not.toHaveBeenCalled();
+  });
+
+  it('uses an extra row to link to the next page without counting or returning that row', async () => {
+    const rows = [{ id: '1' }, { id: '2' }, { id: '3' }];
+    const delegate = createMockDelegate(rows);
+    const countQuery = jest.fn().mockResolvedValue(100);
+    const result = await paginate(
+      { page: 1, limit: 2, path: '/users' },
+      delegate,
+      { ...baseConfig, countStrategy: 'none', withTotalCount: true, countQuery },
+    ) as Paginated<User>;
+
+    expect(delegate.findMany).toHaveBeenCalledTimes(1);
+    expect(delegate.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0, take: 3 }));
+    expect(result.data).toEqual([{ id: '1' }, { id: '2' }]);
+    expect(rows).toHaveLength(3);
+    expect(result.meta.itemsPerPage).toBe(2);
+    expect(result.meta).not.toHaveProperty('totalItems');
+    expect(result.meta).not.toHaveProperty('totalPages');
+    expect(result.links).toEqual({
+      first: '/users?page=1&limit=2',
+      previous: null,
+      current: '/users?page=1&limit=2',
+      next: '/users?page=2&limit=2',
+      last: null,
+    });
+    expect(delegate.count).not.toHaveBeenCalled();
+    expect(countQuery).not.toHaveBeenCalled();
+  });
+
+  it.each([0, 1, 2])('ends count-free navigation when the query returns %i rows at limit 2', async (length) => {
+    const rows = Array.from({ length }, (_, index) => ({ id: String(index + 1) }));
+    const delegate = createMockDelegate(rows);
+    const result = await paginate(
+      { page: 3, limit: 2, path: '/users' }, delegate, { ...baseConfig, countStrategy: 'none' },
+    ) as Paginated<User>;
+
+    expect(result.data).toEqual(rows);
+    expect(result.links.next).toBeNull();
+    expect(result.links.last).toBeNull();
+    expect(result.links.previous).toBe('/users?page=2&limit=2');
+    expect(result.links.current).toBe('/users?page=3&limit=2');
+    expect(delegate.count).not.toHaveBeenCalled();
+  });
+
+  it('keeps the effective limit, offset, selections and query state on count-free pages', async () => {
+    const delegate = createMockDelegate([{ id: '5' }, { id: '6' }, { id: '7' }]);
+    const query: PaginateQuery = {
+      path: '/users', page: 3, limit: 100,
+      sortBy: [['name', 'ASC'], ['id', 'DESC']],
+      search: 'Alice Smith', filter: { age: ['$gte:18', '$lte:65'] }, withDeleted: true,
+    };
+    const result = await paginate(query, delegate, {
+      ...baseConfig, countStrategy: 'none', maxLimit: 2, select: ['id'],
+      relations: { profile: true }, where: { role: 'user' },
+      searchableColumns: ['name'], filterableColumns: { age: ['$gte', '$lte'] }, allowWithDeleted: true,
+    }) as Paginated<User>;
+
+    const args = delegate.findMany.mock.calls[0][0];
+    expect(args).toEqual(expect.objectContaining({
+      skip: 4, take: 3, select: { id: true, profile: true }, withDeleted: true,
+      orderBy: [{ name: 'asc' }, { id: 'desc' }],
+    }));
+    expect(args.where.AND).toContainEqual({ role: 'user' });
+    expect(result.data).toEqual([{ id: '5' }, { id: '6' }]);
+    expect(result.meta.itemsPerPage).toBe(2);
+    const next = new URL(result.links.next!, 'https://example.test');
+    expect(next.searchParams.get('page')).toBe('4');
+    expect(next.searchParams.get('limit')).toBe('2');
+    expect(next.searchParams.getAll('sortBy')).toEqual(['name:ASC', 'id:DESC']);
+    expect(next.searchParams.get('search')).toBe('Alice Smith');
+    expect(next.searchParams.getAll('filter.age')).toEqual(['$gte:18', '$lte:65']);
+    expect(next.searchParams.get('withDeleted')).toBe('true');
+    expect(delegate.count).not.toHaveBeenCalled();
+  });
+
+  it.each(['exact', 'custom'] as const)('retains count-based links and query size for %s counts', async (countStrategy) => {
+    const delegate = createMockDelegate([{ id: '1' }, { id: '2' }], 4);
+    const countQuery = jest.fn().mockResolvedValue(4);
+    const result = await paginate(
+      { path: '/users', limit: 2 }, delegate, { ...baseConfig, countStrategy, countQuery },
+    ) as Paginated<User>;
+
+    expect(delegate.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 2 }));
+    expect(result.meta.totalItems).toBe(4);
+    expect(result.meta.totalPages).toBe(2);
+    expect(result.links.next).toBe('/users?page=2&limit=2');
+    expect(result.links.last).toBe('/users?page=2&limit=2');
+    if (countStrategy === 'exact') {
+      expect(delegate.count).toHaveBeenCalledTimes(1);
+      expect(countQuery).not.toHaveBeenCalled();
+    } else {
+      expect(delegate.count).not.toHaveBeenCalled();
+      expect(countQuery).toHaveBeenCalledTimes(1);
+    }
   });
 
   it('should use custom countQuery when countStrategy is custom', async () => {

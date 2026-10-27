@@ -35,6 +35,24 @@ describe('buildOffsetLinks', () => {
     expect(links.next).toBeNull();
   });
 
+  it('builds navigation with an unknown last page when a next row exists', () => {
+    const links = buildOffsetLinks({ path: '/users' }, 3, 20, undefined, true);
+    expect(links).toEqual({
+      first: '/users?page=1&limit=20',
+      previous: '/users?page=2&limit=20',
+      current: '/users?page=3&limit=20',
+      next: '/users?page=4&limit=20',
+      last: null,
+    });
+  });
+
+  it('leaves the unknown last page null when no next row exists', () => {
+    const links = buildOffsetLinks({ path: '/users' }, 1, 20, undefined, false);
+    expect(links.previous).toBeNull();
+    expect(links.next).toBeNull();
+    expect(links.last).toBeNull();
+  });
+
   it('should preserve sortBy in links', () => {
     const query: PaginateQuery = {
       path: '/users',

@@ -16,7 +16,8 @@ export interface Paginated<T> {
     previous: string | null;
     current: string;
     next: string | null;
-    last: string;
+    /** Null when the total page count is omitted. */
+    last: string | null;
   };
 }
 

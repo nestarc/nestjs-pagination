@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2026-10-27
+
+### Fixed
+
+- Offset pagination with `countStrategy: 'none'` detects the next page by fetching one additional matching row, returns at most the requested limit, and sets `links.next` only when that row exists
+- Count-free offset responses set `links.last` to `null` on every page, including terminal and empty pages, instead of presenting the current page as the known last page
+
+### Added
+
+- PostgreSQL regression coverage for offset navigation without counts across filtered results, terminal pages, and empty pages
+
+### Changed
+
+- The public `Paginated<T>.links.last` type is now `string | null`, and the Swagger offset response marks this field nullable
+- Documented count-free offset navigation: `totalItems` and `totalPages` remain omitted, neither `delegate.count` nor `countQuery` runs, and exact/custom count behavior is unchanged
+
+### Upgrade Notes
+
+- Guard against `null` before rendering or following `links.last`. This is a public TypeScript response type change: code that previously treated the field as an unconditional `string` must handle the unknown-last-page case.
+- Count-free offset clients can now follow `links.next` until it is `null`. `links.last` remains `null` even on terminal and empty pages; it no longer points to the current page. Exact and custom count strategies retain their existing navigation behavior.
+
 ## [0.3.1] - 2026-10-27
 
 ### Fixed

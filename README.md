@@ -22,6 +22,15 @@ Prisma cursor & offset pagination for NestJS with filtering, sorting, search, an
 - **Prisma 7-first** compatibility, with Prisma 5 and 6 retained in the peer range
 - Compatible with `@nestarc/tenancy` (RLS) and `@nestarc/soft-delete` via Prisma extension chain
 
+## Upgrading to 0.3.2
+
+Version 0.3.2 fixes offset navigation with `countStrategy: 'none'`. It checks one extra matching row to populate `links.next`, returns at most the configured limit, and continues to omit totals without running a count query.
+
+- `links.last` is `null` on every count-free offset page, including the final or an empty page. Follow `links.next` until it is `null`; the last page number is unknown.
+- **Source API change:** `Paginated<T>.links.last` is now `string | null`, and Swagger marks it nullable. Guard against `null` before rendering or following this link. Exact and custom count strategies retain their existing navigation behavior.
+
+See the [changelog](CHANGELOG.md) for the full release notes.
+
 ## Upgrading to 0.3.1
 
 Version 0.3.1 fixes keyset navigation, cursor projection, and Nest module count defaults. See the [changelog](CHANGELOG.md) for the full release notes.
@@ -370,7 +379,7 @@ Exact counts are useful for offset UIs, but can be expensive on large filtered l
 | Strategy | Behavior |
 |----------|----------|
 | `exact` | Calls `delegate.count` with the base conditions, filters, and search |
-| `none` | Skips counting and omits `totalItems` and `totalPages` |
+| `none` | Skips counting and omits `totalItems` and `totalPages`; offset navigation checks one extra matching row for the next page |
 | `custom` | Uses the number returned by `countQuery`; the callback is required |
 
 ```typescript
@@ -390,7 +399,17 @@ Defaults: offset uses `exact`; cursor uses `none` unless `withTotalCount: true` 
 
 With `countStrategy: 'exact'`, both cursor strategies report the entire matching result set after base conditions, filters, and search are applied. The count excludes the `after`/`before` boundary. A custom `countQuery` receives this same base `where` and defines the returned total. Totals can change when matching rows are inserted, updated, or deleted between requests.
 
-Current offset limitation: with `countStrategy: 'none'`, `links.next` is `null` and `links.last` points to the current page because the last page is unknown. Use cursor mode for next/previous navigation without a total count.
+Offset pagination supports next/previous navigation with `countStrategy: 'none'`. It fetches up to `limit + 1` rows using the same base conditions, filters, search, and ordering, then returns at most `limit` rows. The extra matching row determines whether a next page exists. Neither `delegate.count` nor `countQuery` is called, and `meta.totalItems` and `meta.totalPages` are omitted.
+
+| Offset link with `countStrategy: 'none'` | Value |
+|---------------------------------------|-------|
+| `first` | URL for page 1 |
+| `previous` | URL for the preceding page, or `null` on page 1 |
+| `current` | URL for the requested page |
+| `next` | URL for the next page when an extra matching row was fetched; otherwise `null` |
+| `last` | Always `null`, including on terminal and empty pages, because the total page count is unknown |
+
+Pagination links preserve sorting, search, and filter query parameters. The TypeScript `Paginated<T>` response declares `links.last` as `string | null`, and the Swagger offset response marks it nullable. Clients should only render a last-page link when its value is non-null. Exact and custom count strategies continue to calculate navigation links from their reported totals.
 
 ## Soft Delete
 
@@ -465,7 +484,7 @@ npm run test:integration
 
 The default connection is `postgresql://test:test@localhost:5434/pagination_test`. Set `DATABASE_URL` to use another test database; the database user must be able to create and drop schemas. Each run creates a randomly named schema and removes it in a `finally` block, without clearing an existing `products` table.
 
-The suite exercises forward and backward keyset navigation with tied values and mixed sort directions, first/last page boundaries, filtered exact and custom totals, extra sort columns, selected fields, deleted cursor rows, and Nest module defaults and endpoint overrides. CI runs it with Prisma 7 on Node.js 20, 22, and 24. `npm run test:prisma7:smoke` remains an alias for the integration suite.
+The suite exercises forward and backward keyset navigation with tied values and mixed sort directions, first/last page boundaries, filtered exact and custom totals, extra sort columns, selected fields, deleted cursor rows, and Nest module defaults and endpoint overrides. It also checks offset navigation without counts, including filtered results and terminal or empty pages. CI runs it with Prisma 7 on Node.js 20, 22, and 24. `npm run test:prisma7:smoke` remains an alias for the integration suite.
 
 `test:integration` builds the package and generates the Prisma client before running the database scenarios. Run `npm test -- --runInBand` for unit tests and `npm run test:prisma7:types` for generated-client type compatibility. When finished with the local test database, run `docker compose down`.
 

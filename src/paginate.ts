@@ -54,19 +54,20 @@ async function paginateOffset<T>(
 
   const orderBy = buildOrderBy(sortBy, config.nullSort);
   const where = buildWhere(query, config);
+  const countStrategy = resolveCountStrategy(config, 'offset');
+  const needsLookahead = countStrategy === 'none';
 
   const findManyArgs: any = {
     where,
     orderBy,
     skip: (page - 1) * limit,
-    take: limit,
+    take: needsLookahead ? limit + 1 : limit,
   };
   applyWithDeleted(findManyArgs, query, config);
 
   applySelectAndRelations(findManyArgs, config);
 
-  const countStrategy = resolveCountStrategy(config, 'offset');
-  const [data, totalItems] = await Promise.all([
+  const [rows, totalItems] = await Promise.all([
     delegate.findMany(findManyArgs),
     runCount(countStrategy, where, delegate, query, config),
   ]);
@@ -74,6 +75,8 @@ async function paginateOffset<T>(
   const totalPages = totalItems !== undefined
     ? Math.max(Math.ceil(totalItems / limit), 1)
     : undefined;
+  const hasNextPage = needsLookahead && rows.length > limit;
+  const data = needsLookahead ? rows.slice(0, limit) : rows;
 
   return {
     data,
@@ -86,7 +89,7 @@ async function paginateOffset<T>(
       ...(query.search && { search: query.search }),
       ...(query.filter && { filter: flattenFilter(query.filter) }),
     },
-    links: buildOffsetLinks(query, page, limit, totalPages ?? page),
+    links: buildOffsetLinks(query, page, limit, totalPages, hasNextPage),
   };
 }
 

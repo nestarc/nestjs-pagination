@@ -1,6 +1,6 @@
 {
   "name": "@nestarc/pagination",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Prisma cursor & offset pagination for NestJS with filtering, sorting, search, and Swagger auto-documentation",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -53,7 +53,7 @@ export function ApiPaginatedResponse(
                   previous: { type: 'string', nullable: true },
                   current: { type: 'string' },
                   next: { type: 'string', nullable: true },
-                  last: { type: 'string' },
+                  last: { type: 'string', nullable: true },
                 },
               },
             },

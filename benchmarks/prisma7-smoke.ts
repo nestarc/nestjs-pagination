@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { PrismaPg } from '@prisma/adapter-pg';
-import type { CursorPaginated, PaginateConfig, PaginateQuery } from '../src';
+import type { CursorPaginated, Paginated, PaginateConfig, PaginateQuery } from '../src';
 import { PrismaClient, Product } from './generated/client/client';
 import { createPrismaClient, DATABASE_URL } from './prisma-client';
 
 // Exercise the built package, including TypeScript's emitted Nest DI metadata.
 const { paginate, PaginationModule, PaginateService } = require('../dist') as typeof import('../src');
+const { parsePaginateQuery } = require('../dist/pipes/paginate-query.pipe') as typeof import('../src/pipes/paginate-query.pipe');
 
 const schema = `pagination_test_${randomUUID().replaceAll('-', '')}`;
 const admin = createPrismaClient();
@@ -113,6 +114,131 @@ async function checkBasicPagination(): Promise<void> {
   assert.deepEqual(second.data.map((record) => record.id), [id(3), id(4)]);
   const previous = await cursorPage({ before: requireCursor(second.meta.startCursor) }, config);
   assert.deepEqual(previous.data, first.data);
+}
+
+function queryFromLink(link: string): PaginateQuery {
+  const url = new URL(link, 'http://localhost');
+  const query: Record<string, string | string[]> = {};
+  url.searchParams.forEach((_value, key) => {
+    const values = url.searchParams.getAll(key);
+    query[key] = values.length === 1 ? values[0] : values;
+  });
+  return parsePaginateQuery({ path: url.pathname, query });
+}
+
+async function checkCountFreeOffsetNavigation(): Promise<void> {
+  const delegate = {
+    findMany: (args: Parameters<typeof prisma.product.findMany>[0]) => prisma.product.findMany(args),
+    count: async (): Promise<number> => {
+      throw new Error('countStrategy:none must never invoke delegate.count');
+    },
+  };
+  const config: PaginateConfig<Product> = {
+    ...baseConfig,
+    paginationType: 'offset',
+    countStrategy: 'none',
+    countQuery: async () => {
+      throw new Error('countStrategy:none must never invoke countQuery');
+    },
+    filterableColumns: { price: ['$gte', '$lte'] },
+    where: { category: 'A', active: true },
+    select: ['id', 'price'],
+  };
+
+  async function readPage(query: PaginateQuery, pageConfig = config): Promise<Paginated<Product>> {
+    const result = await paginate<Product>(query, delegate, pageConfig);
+    assert.ok('currentPage' in result.meta, 'expected offset response');
+    assert.equal('totalItems' in result.meta, false, 'unknown totals must be omitted');
+    assert.equal('totalPages' in result.meta, false, 'unknown page count must be omitted');
+    const page = result as Paginated<Product>;
+    assert.equal(page.links.last, null, 'last is unknown even on a terminal or empty page');
+    for (const record of page.data) {
+      assert.deepEqual(Object.keys(record).sort(), ['id', 'price']);
+    }
+    return page;
+  }
+
+  async function walk(minPrice: number, requestedLimit: number, maxLimit: number): Promise<void> {
+    const initial: PaginateQuery = {
+      path: '/products',
+      page: 1,
+      limit: requestedLimit,
+      sortBy: [['price', 'DESC'], ['id', 'ASC']],
+      search: 'Product 0',
+      filter: { price: [`$gte:${minPrice}`, '$lte:120'] },
+    };
+    const limit = Math.min(requestedLimit, maxLimit);
+    const expected = records
+      .filter((record) => record.category === 'A' && record.active &&
+        record.name.includes(initial.search!) && record.price >= minPrice && record.price <= 120)
+      .sort((left, right) => right.price - left.price)
+      .map(({ id: productId, price }) => ({ id: productId, price }));
+    assert.ok(expected.length > limit * 2, 'fixture must span at least three pages');
+    const pages: Paginated<Product>[] = [];
+    let query = initial;
+
+    for (let pageNumber = 1; ; pageNumber++) {
+      assert.ok(pageNumber <= records.length, 'following next links must terminate');
+      const result = await readPage(query, { ...config, maxLimit });
+      pages.push(result);
+      assert.equal(result.meta.currentPage, pageNumber);
+      assert.equal(result.meta.itemsPerPage, limit);
+      assert.deepEqual(result.data, expected.slice((pageNumber - 1) * limit, pageNumber * limit));
+      assert.deepEqual(result.meta.sortBy, initial.sortBy);
+
+      function assertLink(link: string, targetPage: number): PaginateQuery {
+        const parsed = queryFromLink(link);
+        assert.deepEqual(parsed, {
+          ...initial,
+          page: targetPage,
+          limit,
+        }, 'links must preserve search, repeated filters, and multiple sort columns');
+        return parsed;
+      }
+
+      assertLink(result.links.first, 1);
+      assertLink(result.links.current, pageNumber);
+      if (pageNumber === 1) {
+        assert.equal(result.links.previous, null);
+      } else {
+        assert.ok(result.links.previous);
+        assertLink(result.links.previous, pageNumber - 1);
+      }
+
+      if (pageNumber * limit >= expected.length) {
+        assert.equal(result.links.next, null, 'the final page must not advertise an empty successor');
+        break;
+      }
+      assert.ok(result.links.next, 'a lookahead row must produce a next link');
+      // Use the advertised URL as the next request, as an HTTP client would.
+      query = assertLink(result.links.next, pageNumber + 1);
+    }
+    assert.deepEqual(pages.flatMap((page) => page.data), expected, 'lookahead rows must not be lost or returned twice');
+    assert.equal(pages.length, Math.ceil(expected.length / limit));
+
+    const outOfRangeQuery = { ...initial, page: pages.length + 1 };
+    const outOfRange = await readPage(outOfRangeQuery, { ...config, maxLimit });
+    assert.deepEqual(outOfRange.data, []);
+    assert.equal(outOfRange.links.next, null);
+    assert.equal(queryFromLink(outOfRange.links.current).page, pages.length + 1);
+    assert.ok(outOfRange.links.previous);
+    assert.equal(queryFromLink(outOfRange.links.previous).page, pages.length);
+  }
+
+  await walk(50, 100, 2); // Six rows: exact multiple, with the requested limit clamped.
+  await walk(30, 3, 4); // Seven rows: a partial final page.
+
+  const empty = await readPage({
+    path: '/products',
+    page: 1,
+    limit: 2,
+    search: 'no matching product',
+    filter: { price: '$gte:30' },
+  });
+  assert.deepEqual(empty.data, []);
+  assert.equal(empty.links.next, null);
+  assert.equal(empty.links.previous, null);
+  assert.equal(empty.links.first, empty.links.current);
 }
 
 async function checkCounts(): Promise<void> {
@@ -274,6 +400,7 @@ async function main(): Promise<void> {
 
     const scenarios: [string, () => Promise<void>][] = [
       ['offset and Prisma cursor navigation', checkBasicPagination],
+      ['count-free offset links, filtered traversal, and page boundaries', checkCountFreeOffsetNavigation],
       ...(['ASC', 'DESC'] as const).flatMap((dateOrder) =>
         (['ASC', 'DESC'] as const).map((idOrder): [string, () => Promise<void>] => [
           `keyset round trip: createdAt ${dateOrder}, id ${idOrder}`,
