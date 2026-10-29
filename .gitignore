@@ -2,6 +2,9 @@
 /dist
 /build
 
+# Local documentation
+/docs/
+
 # Dependencies
 /node_modules
 
